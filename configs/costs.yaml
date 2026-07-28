@@ -1,0 +1,34 @@
+# Approximate retail/prop-style costs on mid price fills
+default:
+  half_spread_pips: 0.6
+  slippage_pips: 0.2
+  commission_per_lot_usd: 7.0  # round-turn proxy
+
+pairs:
+  EURUSD:
+    half_spread_pips: 0.5
+    slippage_pips: 0.2
+    commission_per_lot_usd: 7.0
+  GBPUSD:
+    half_spread_pips: 0.7
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+  USDJPY:
+    half_spread_pips: 0.6
+    slippage_pips: 0.2
+    commission_per_lot_usd: 7.0
+  AUDUSD:
+    half_spread_pips: 0.7
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+  USDCAD:
+    half_spread_pips: 0.8
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+
+pip_size:
+  EURUSD: 0.0001
+  GBPUSD: 0.0001
+  USDJPY: 0.01
+  AUDUSD: 0.0001
+  USDCAD: 0.0001

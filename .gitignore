@@ -1,0 +1,32 @@
+# Data & reports (repo root only)
+/data/
+/reports/
+*.parquet
+*.csv
+!configs/**
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# MT5 local
+mt5/*.ex5
+mt5/*.log

@@ -1,0 +1,27 @@
+account:
+  initial_balance: 100000
+  currency: USD
+
+phase1:
+  profit_target_pct: 10.0
+  max_daily_loss_pct: 5.0
+  max_loss_pct: 10.0
+  min_trading_days: 4
+
+phase2:
+  profit_target_pct: 5.0
+  max_daily_loss_pct: 5.0
+  max_loss_pct: 10.0
+  min_trading_days: 4
+
+# FTMO daily loss resets at 00:00 CE(S)T
+daily_reset:
+  timezone: Europe/Prague
+
+drawdown:
+  type: static  # from initial balance
+  include_floating: true
+
+weekend:
+  hard_flat: true
+  friday_flat_utc: "20:00"
