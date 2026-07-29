@@ -8,7 +8,7 @@ from src.config import ROOT, ensure_dirs
 CSSM_STUB = r'''//+------------------------------------------------------------------+
 //| CSSM_EA.mq5 — stub (authorized only after research GO)           |
 //+------------------------------------------------------------------+
-#property copyright "cssm-prop"
+#property copyright "trade-research"
 #property version   "1.00"
 #property strict
 
@@ -28,7 +28,7 @@ void OnTick() {}
 ORB_STUB = r'''//+------------------------------------------------------------------+
 //| ORB_EA.mq5 — stub (authorized only after research GO)            |
 //+------------------------------------------------------------------+
-#property copyright "orb-prop"
+#property copyright "trade-research"
 #property version   "1.00"
 #property strict
 
@@ -49,7 +49,7 @@ HTF_STUB = r'''//+--------------------------------------------------------------
 //| HTF_PULLBACK_EA.mq5 — stub (authorized only after research GO)   |
 //| H4 EMA200 bias + M15 EMA21 pullback reclaim                       |
 //+------------------------------------------------------------------+
-#property copyright "htf-prop"
+#property copyright "trade-research"
 #property version   "1.00"
 #property strict
 

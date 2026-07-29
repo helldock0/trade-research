@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cssm-prop"
+name = "trade-research"
 version = "0.1.0"
-description = "Cross-Sectional Session Momentum research harness for FTMO-style prop challenges"
+description = "Prop challenge research harness (multi-strategy FTMO-style backtests)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -23,10 +23,11 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-cssm-download = "scripts.download_data:main"
-cssm-backtest = "scripts.run_backtest:main"
-cssm-walkforward = "scripts.run_walkforward:main"
-cssm-prop = "scripts.run_prop_sim:main"
+trade-download = "scripts.download_data:main"
+trade-backtest = "scripts.run_backtest:main"
+trade-walkforward = "scripts.run_walkforward:main"
+trade-prop = "scripts.run_prop_sim:main"
+trade-all = "scripts.run_all:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -34,3 +35,7 @@ include = ["src*", "scripts*"]
 
 [tool.setuptools.package-dir]
 "" = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

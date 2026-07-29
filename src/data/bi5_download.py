@@ -66,7 +66,7 @@ def download_ticks_range(
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
     sess = session or requests.Session()
-    sess.headers.update({"User-Agent": "cssm-prop/0.1"})
+    sess.headers.update({"User-Agent": "trade-research/0.1"})
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
     if end.tzinfo is None:

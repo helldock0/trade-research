@@ -9,3 +9,9 @@ All OHLC data lives in **`data/parquet`** (`D:\AI\trade\data\parquet`).
 - Load via `src.data.dukascopy_ingest` / strategy configs (`data.cache_dir`)
 
 Do not use another data folder unless explicitly asked. Prefer existing files over re-downloading.
+
+## Repo layout
+
+- Code/configs/tests are tracked; `data/` and `reports/` are local-only.
+- Research ledger: `docs/STATUS.md`
+- Package name: `trade-research` (`pyproject.toml`)
