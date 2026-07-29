@@ -19,6 +19,10 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `ebp` | Omar Agag H4 engulfing bar play | Active / untested |
+| `nowick` | Bard FX M15 Nowick retest | Active / untested |
+| `fib_swing` | H4 EMA + 0.71 fib swing | Active / untested |
+| `judas` | ICT Judas Asia sweep (M15 proxy) | Active / untested |
 
 ## Setup
 

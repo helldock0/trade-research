@@ -1,0 +1,53 @@
+# Omar Agag EBP — H4 engulfing bar play (research / unproven)
+strategy: ebp
+
+universe:
+  - XAUUSD
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+
+timeframe: M15
+regime_timeframe: H4
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  htf_rule: "4h"
+  # Strong close: within 15% of extreme → limit 25% / SL 75%
+  strong_close_max: 0.15
+  # Close beyond 50% into bar → market entry trigger #2
+  market_entry_min_retracement: 0.50
+  take_profit_r: 2.0
+  max_wait_htf_bars: 12
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 15
+  breakeven_at_r: 1.0
+  min_htf_bars: 40
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

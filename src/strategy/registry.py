@@ -16,7 +16,38 @@ KNOWN_STRATEGIES: tuple[str, ...] = (
     "donchian_atr",
     "xau_htf_pullback",
     "htf_adx_pullback",
+    "ebp",
+    "nowick",
+    "fib_swing",
+    "judas",
 )
+
+_CONFIG_BY_ID: dict[str, str] = {
+    "orb": "strategy_orb.yaml",
+    "csmo": "strategy_csmo.yaml",
+    "htf_pullback": "strategy_htf_pullback.yaml",
+    "htf": "strategy_htf_pullback.yaml",
+    "d1_mom": "strategy_d1_mom.yaml",
+    "d1": "strategy_d1_mom.yaml",
+    "fail_fade": "strategy_fail_fade.yaml",
+    "fade": "strategy_fail_fade.yaml",
+    "vwap_fade": "strategy_vwap_fade.yaml",
+    "vwap": "strategy_vwap_fade.yaml",
+    "msnr": "strategy_msnr.yaml",
+    "donchian_atr": "strategy_donchian_atr.yaml",
+    "donchian": "strategy_donchian_atr.yaml",
+    "xau_htf_pullback": "strategy_xau_htf_pullback.yaml",
+    "xau_htf": "strategy_xau_htf_pullback.yaml",
+    "xau": "strategy_xau_htf_pullback.yaml",
+    "htf_adx_pullback": "strategy_htf_adx_pullback.yaml",
+    "htf_adx": "strategy_htf_adx_pullback.yaml",
+    "adx_pullback": "strategy_htf_adx_pullback.yaml",
+    "ebp": "strategy_ebp.yaml",
+    "nowick": "strategy_nowick.yaml",
+    "fib_swing": "strategy_fib_swing.yaml",
+    "fib": "strategy_fib_swing.yaml",
+    "judas": "strategy_judas.yaml",
+}
 
 
 def list_strategies() -> list[str]:
@@ -70,6 +101,22 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
         from src.strategy.htf_adx_pullback import generate_signals
 
         return generate_signals
+    if sid == "ebp":
+        from src.strategy.ebp import generate_signals
+
+        return generate_signals
+    if sid == "nowick":
+        from src.strategy.nowick import generate_signals
+
+        return generate_signals
+    if sid in ("fib_swing", "fib"):
+        from src.strategy.fib_swing import generate_signals
+
+        return generate_signals
+    if sid == "judas":
+        from src.strategy.judas import generate_signals
+
+        return generate_signals
     from src.strategy.cssm import generate_signals
 
     return generate_signals
@@ -77,24 +124,4 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
 
 def default_config_name(strategy: str | None = None) -> str:
     s = (strategy or "cssm").lower()
-    if s == "orb":
-        return "strategy_orb.yaml"
-    if s == "csmo":
-        return "strategy_csmo.yaml"
-    if s in ("htf_pullback", "htf"):
-        return "strategy_htf_pullback.yaml"
-    if s in ("d1_mom", "d1"):
-        return "strategy_d1_mom.yaml"
-    if s in ("fail_fade", "fade"):
-        return "strategy_fail_fade.yaml"
-    if s in ("vwap_fade", "vwap"):
-        return "strategy_vwap_fade.yaml"
-    if s == "msnr":
-        return "strategy_msnr.yaml"
-    if s in ("donchian_atr", "donchian"):
-        return "strategy_donchian_atr.yaml"
-    if s in ("xau_htf_pullback", "xau_htf", "xau"):
-        return "strategy_xau_htf_pullback.yaml"
-    if s in ("htf_adx_pullback", "htf_adx", "adx_pullback"):
-        return "strategy_htf_adx_pullback.yaml"
-    return "strategy_cssm.yaml"
+    return _CONFIG_BY_ID.get(s, "strategy_cssm.yaml")
