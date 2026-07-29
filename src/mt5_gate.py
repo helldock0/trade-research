@@ -122,6 +122,16 @@ def _nogo_next_hint(strategy_name: str) -> str:
             "Next research cycle on NO-GO for Donchian: XAUUSD HTF pullback "
             "(do not stack Donchian knobs).\n"
         )
+    if sid in ("htf_adx_pullback", "htf_adx", "adx_pullback"):
+        return (
+            "Next research cycle on NO-GO for HTF ADX pullback: XAUUSD HTF pullback "
+            "(do not stack ADX knobs).\n"
+        )
+    if sid in ("xau_htf_pullback", "xau_htf", "xau"):
+        return (
+            "Next research cycle on NO-GO for XAU HTF pullback: pick a new hypothesis "
+            "(do not stack XAU HTF knobs).\n"
+        )
     return "Re-run walk-forward after hypothesis changes.\n"
 
 
@@ -137,7 +147,6 @@ def maybe_write_mt5_stub(promoted: bool, strategy_name: str = "cssm") -> Path | 
         readme.write_text(
             f"# MT5\n\nPromotion verdict for **{strategy_name}** is **NO-GO**. "
             f"EA stub `{ea_name}` not written.\n"
-            "Re-run walk-forward after hypothesis changes.\n"
             + _nogo_next_hint(strategy_name),
             encoding="utf-8",
         )

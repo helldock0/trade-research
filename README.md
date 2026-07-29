@@ -18,7 +18,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `msnr` | H4 MSNR zones + M15 rejection | NO-GO |
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
-| `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | research / unproven |
+| `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
 
 ## Setup
 
@@ -43,9 +43,9 @@ $env:PYTHONIOENCODING="utf-8"
 python scripts/download_data.py
 
 # 2) Single strategy
-python scripts/run_backtest.py --strategy xau_htf_pullback
-python scripts/run_prop_sim.py --strategy xau_htf_pullback
-python scripts/run_walkforward.py --strategy xau_htf_pullback
+python scripts/run_backtest.py --strategy htf_adx_pullback
+python scripts/run_prop_sim.py --strategy htf_adx_pullback
+python scripts/run_walkforward.py --strategy htf_adx_pullback
 
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py

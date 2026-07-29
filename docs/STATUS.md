@@ -17,13 +17,12 @@ Detailed run artifacts stay in `reports/` (local only).
 | `vwap_fade` | Session VWAP fade ~-0.035R | NO-GO |
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
+| `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
 
 ## Active
 
-| Strategy | Notes | Status |
-|----------|-------|--------|
-| `xau_htf_pullback` | XAUUSD H4 EMA200 + M15 EMA21 pullback | research / unproven |
+None. All current lines are NO-GO.
 
 ## Next
 
-Continue XAUUSD HTF pullback evaluation (backtest → FTMO sim → walk-forward → promote).
+Pick a new hypothesis (do not stack knobs on rejected XAU / majors HTF lines).
