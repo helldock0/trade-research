@@ -19,6 +19,15 @@ def load_strategy_config(name: str = "strategy_cssm.yaml") -> dict[str, Any]:
     return load_yaml(CONFIG_DIR / name)
 
 
+def resolve_strategy_config_name(strategy: str | None = None, config: str | None = None) -> str:
+    """Prefer explicit --config; else map --strategy to yaml filename."""
+    if config:
+        return config
+    from src.strategy.registry import default_config_name
+
+    return default_config_name(strategy)
+
+
 def load_ftmo_config(name: str = "ftmo_2step.yaml") -> dict[str, Any]:
     return load_yaml(CONFIG_DIR / name)
 

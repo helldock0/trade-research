@@ -14,11 +14,14 @@ def pair_cost(symbol: str, costs_cfg: dict[str, Any]) -> dict[str, float]:
 
 
 def pip_size(symbol: str, costs_cfg: dict[str, Any]) -> float:
-    return float(
-        costs_cfg.get("pip_size", {}).get(
-            symbol, 0.01 if "JPY" in symbol.upper() else 0.0001
-        )
-    )
+    sym = symbol.upper()
+    if "XAU" in sym:
+        default = 0.01
+    elif "JPY" in sym:
+        default = 0.01
+    else:
+        default = 0.0001
+    return float(costs_cfg.get("pip_size", {}).get(symbol, default))
 
 
 def entry_fill_price(side: int, mid: float, symbol: str, costs_cfg: dict[str, Any]) -> float:
@@ -37,8 +40,13 @@ def exit_fill_price(side: int, mid: float, symbol: str, costs_cfg: dict[str, Any
 
 
 def pip_value_per_lot(symbol: str, price: float) -> float:
-    """Approximate USD pip value for 1.0 standard lot (100k base)."""
+    """Approximate USD pip value for 1.0 standard lot.
+
+    FX: 100k base. XAUUSD: 100 oz contract, $1 per 0.01 move per lot.
+    """
     sym = symbol.upper()
+    if "XAU" in sym:
+        return 1.0
     if sym.endswith("USD"):
         # EURUSD etc: 1 pip = 10 USD per lot for 0.0001 pip
         return 10.0 if "JPY" not in sym else 1000.0 / price  # shouldn't hit

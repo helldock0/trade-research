@@ -29,6 +29,11 @@ signal:
   stop_buffer_pips: 2.0
   take_profit_r: 1.5
   enable_ny_session: true
+  # v1.1 exit hypothesis: hold all trades to NY close; BE trail at +1R
+  exit_mode: hold_to_ny
+  breakeven_at_r: 1.0
+  # v1.2 entry filter: require next M15 bar to continue beyond the break
+  require_confirm_bar: true
 
 risk:
   risk_per_trade_pct: 0.5

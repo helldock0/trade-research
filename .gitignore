@@ -21,6 +21,7 @@ venv/
 .ruff_cache/
 
 # IDE / OS
+.cursor/
 .idea/
 .vscode/
 *.swp

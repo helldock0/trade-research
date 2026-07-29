@@ -1,0 +1,50 @@
+# XAUUSD HTF pullback v1 — H4 EMA200 bias, M15 EMA21 reclaim (research / unproven)
+strategy: xau_htf_pullback
+
+universe:
+  - XAUUSD
+
+timeframe: M15
+regime_timeframe: H4
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  htf_rule: "4h"
+  htf_ema_period: 200
+  entry_ema_period: 21
+  atr_period: 14
+  atr_stop_mult: 1.5
+  take_profit_r: 2.0
+  enable_ny_session: true
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 10
+  breakeven_at_r: 1.0
+  require_confirm_bar: false
+  min_htf_bars: 220
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

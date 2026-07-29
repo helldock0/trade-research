@@ -1,0 +1,48 @@
+strategy: vwap_fade
+
+universe:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+  - USDCAD
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  atr_period: 14
+  stretch_atr: 1.5
+  atr_stop_mult: 1.0
+  take_profit_r: 0.8
+  adx_period: 14
+  adx_max: 25.0
+  vwap_reset: london_start
+  enable_ny_session: true
+  breakeven_at_r: 1.0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

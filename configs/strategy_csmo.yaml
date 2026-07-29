@@ -1,0 +1,49 @@
+strategy: csmo
+
+universe:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+  - USDCAD
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  atr_period: 20
+  overnight_lookback_days: 60
+  winner_percentile: 0.80
+  loser_percentile: 0.20
+  stop_atr_mult: 0.75
+  take_profit_r: 1.5
+  exit_mode: hold_to_ny
+  breakeven_at_r: 1.0
+  # No NY session entries for CSMO
+  enable_ny_session: false
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

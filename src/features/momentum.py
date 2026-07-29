@@ -113,9 +113,46 @@ def trailing_percentile(series: pd.Series, lookback: int, q: float) -> pd.Series
     return series.rolling(lookback, min_periods=max(20, lookback // 3)).quantile(q)
 
 
+def pick_cross_section_candidate(
+    rets: dict[str, float],
+    history: dict[str, list[float]],
+    winner_pct: float,
+    loser_pct: float,
+    min_history: int = 20,
+) -> tuple[str, int, float] | None:
+    """Pick (symbol, side, ret) from cross-section + own-history percentile gates.
+
+    Rank by raw return: #1 long candidate, last short candidate.
+    """
+    if len(rets) < 2:
+        return None
+
+    ranked = sorted(rets.items(), key=lambda kv: kv[1], reverse=True)
+    winner_sym, winner_ret = ranked[0]
+    loser_sym, loser_ret = ranked[-1]
+
+    candidates: list[tuple[str, int, float]] = []
+
+    w_hist = history.get(winner_sym, [])
+    if len(w_hist) >= min_history:
+        thr = float(np.quantile(w_hist, winner_pct))
+        if winner_ret >= thr:
+            candidates.append((winner_sym, 1, winner_ret))
+
+    l_hist = history.get(loser_sym, [])
+    if len(l_hist) >= min_history:
+        thr = float(np.quantile(l_hist, loser_pct))
+        if loser_ret <= thr:
+            candidates.append((loser_sym, -1, loser_ret))
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda c: abs(c[2]))
+
+
 def parse_session_times(cfg: dict) -> dict[str, time]:
     s = cfg["sessions"]
-    return {
+    out = {
         "asian_start": parse_hhmm(s["asian_start"]),
         "asian_end": parse_hhmm(s["asian_end"]),
         "london_start": parse_hhmm(s["london_start"]),
@@ -123,6 +160,10 @@ def parse_session_times(cfg: dict) -> dict[str, time]:
         "ny_start": parse_hhmm(s["ny_start"]),
         "ny_end": parse_hhmm(s["ny_end"]),
         "overnight_anchor": parse_hhmm(s["overnight_anchor"]),
-        "friday_no_new_entries": parse_hhmm(s["friday_no_new_entries"]),
-        "friday_hard_flat": parse_hhmm(s["friday_hard_flat"]),
     }
+    # Friday cutoffs optional when allow_weekend_hold strategies omit them
+    if "friday_no_new_entries" in s and s["friday_no_new_entries"]:
+        out["friday_no_new_entries"] = parse_hhmm(s["friday_no_new_entries"])
+    if "friday_hard_flat" in s and s["friday_hard_flat"]:
+        out["friday_hard_flat"] = parse_hhmm(s["friday_hard_flat"])
+    return out

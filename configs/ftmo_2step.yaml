@@ -23,5 +23,5 @@ drawdown:
   include_floating: true
 
 weekend:
-  hard_flat: true
+  hard_flat: false  # Swing-style research; Standard funded often still bans weekends
   friday_flat_utc: "20:00"

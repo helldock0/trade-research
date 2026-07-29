@@ -1,0 +1,57 @@
+# Pure Session ORB v1 — Asian-range break without cross-sectional momentum
+strategy: orb
+
+universe:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+  - USDCAD
+
+timeframe: M15
+regime_timeframe: H1
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"  # unused by ORB; kept for session parser parity
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  atr_period: 20
+  atr_lookback_days: 60
+  # Volatility regime: Asian range width / daily ATR within historical percentiles
+  range_pct_low: 0.25
+  range_pct_high: 0.70
+  # Absolute range width filters (pips)
+  min_range_pips: 15.0
+  max_range_pips: 100.0
+  stop_buffer_pips: 2.0
+  take_profit_r: 1.5
+  breakout_buffer_pips: 0.0
+  enable_ny_session: true
+  # Classic session exits (London -> london_end, NY -> ny_end)
+  exit_mode: session
+  breakeven_at_r: 0.0
+  require_confirm_bar: false
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

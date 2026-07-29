@@ -48,27 +48,36 @@ class BacktestResult:
         return pd.DataFrame([asdict(t) for t in self.trades])
 
 
-def _apply_exit(
+def unrealized_r(side: int, entry: float, price: float, risk_price: float) -> float:
+    """Signed R multiple from entry to price given initial stop distance."""
+    if risk_price <= 0:
+        return 0.0
+    if side > 0:
+        return (price - entry) / risk_price
+    return (entry - price) / risk_price
+
+
+def maybe_move_stop_to_breakeven(
     side: int,
     entry: float,
-    exit_mid: float,
     stop: float,
-    tp: float,
-    symbol: str,
-    costs_cfg: dict,
-) -> tuple[float, str]:
-    # Check stop/tp against bar path approximated by mid; fill with costs
-    if side > 0:
-        if exit_mid <= stop:
-            return exit_fill_price(side, stop, symbol, costs_cfg), "stop"
-        if exit_mid >= tp:
-            return exit_fill_price(side, tp, symbol, costs_cfg), "tp"
-    else:
-        if exit_mid >= stop:
-            return exit_fill_price(side, stop, symbol, costs_cfg), "stop"
-        if exit_mid <= tp:
-            return exit_fill_price(side, tp, symbol, costs_cfg), "tp"
-    return exit_fill_price(side, exit_mid, symbol, costs_cfg), "time"
+    close: float,
+    risk_price: float,
+    breakeven_at_r: float,
+    already_be: bool = False,
+) -> tuple[float, bool]:
+    """If close reaches +breakeven_at_r, move stop to entry. Returns (stop, is_be)."""
+    if already_be or breakeven_at_r <= 0:
+        return stop, already_be
+    if unrealized_r(side, entry, close, risk_price) >= breakeven_at_r:
+        return entry, True
+    return stop, False
+
+
+def stop_exit_reason(side: int, stop: float, entry: float, be_armed: bool) -> str:
+    if be_armed and abs(stop - entry) < 1e-12:
+        return "breakeven_stop"
+    return "stop"
 
 
 def run_backtest(
@@ -81,9 +90,23 @@ def run_backtest(
     risk_pct = float(strategy_cfg["risk"]["risk_per_trade_pct"])
     max_open = int(strategy_cfg["risk"]["max_open_positions"])
     soft_daily = float(strategy_cfg["risk"]["soft_daily_halt_pct"])
-    friday_flat = parse_hhmm(strategy_cfg["sessions"]["friday_hard_flat"])
-    london_end = parse_hhmm(strategy_cfg["sessions"]["london_end"])
-    ny_end = parse_hhmm(strategy_cfg["sessions"]["ny_end"])
+    sessions_cfg = strategy_cfg.get("sessions", {})
+    friday_flat = (
+        parse_hhmm(sessions_cfg["friday_hard_flat"])
+        if sessions_cfg.get("friday_hard_flat")
+        else None
+    )
+    friday_no_new = (
+        parse_hhmm(sessions_cfg["friday_no_new_entries"])
+        if sessions_cfg.get("friday_no_new_entries")
+        else None
+    )
+    london_end = parse_hhmm(sessions_cfg["london_end"])
+    ny_end = parse_hhmm(sessions_cfg["ny_end"])
+    exit_mode = str(strategy_cfg.get("signal", {}).get("exit_mode", "session"))
+    breakeven_at_r = float(strategy_cfg.get("signal", {}).get("breakeven_at_r", 0.0))
+    allow_weekend_hold = bool(strategy_cfg.get("signal", {}).get("allow_weekend_hold", False))
+    max_hold_days = int(strategy_cfg.get("signal", {}).get("max_hold_days", 0) or 0)
 
     bars = {s: ensure_utc_index(df) for s, df in bars_by_symbol.items()}
     balance = initial_balance
@@ -91,8 +114,7 @@ def run_backtest(
     trades: list[Trade] = []
     equity_points: list[tuple[pd.Timestamp, float]] = []
 
-    open_pos: dict[str, dict] | None = None  # single position tracker
-    # Actually max 1 global position
+    # Max 1 global position
     position: dict[str, Any] | None = None
 
     day_start_equity = initial_balance
@@ -123,29 +145,68 @@ def run_backtest(
             if bar is not None:
                 high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
                 side = position["side"]
-                stop, tp = position["stop"], position["take_profit"]
+                entry = float(position["entry_price"])
+                risk_price = float(position["risk_price"])
+                tp = position["take_profit"]
+                be_armed = bool(position.get("be_armed", False))
+                stop = float(position["stop"])
+
                 exit_mid = None
                 reason = None
 
-                # Intrabar stop/tp: conservative — stop first if both touched
+                # Intrabar stop/tp with stop from prior bars (no same-bar BE lookahead)
                 if side > 0:
                     if low <= stop:
-                        exit_mid, reason = stop, "stop"
+                        exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed)
                     elif high >= tp:
                         exit_mid, reason = tp, "tp"
                 else:
                     if high >= stop:
-                        exit_mid, reason = stop, "stop"
+                        exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed)
                     elif low <= tp:
                         exit_mid, reason = tp, "tp"
 
-                # Session / Friday time stops
+                # Session / Friday time stops (skipped in swing mode)
                 sess = position["session"]
-                end_t = ny_end if sess == "ny" else london_end
-                if reason is None and ts.time() >= end_t:
-                    exit_mid, reason = close, "session_end"
-                if reason is None and is_friday(ts) and ts.time() >= friday_flat:
-                    exit_mid, reason = close, "friday_flat"
+                if exit_mode != "swing":
+                    if exit_mode == "hold_to_ny":
+                        end_t = ny_end
+                    else:
+                        end_t = ny_end if sess == "ny" else london_end
+                    if reason is None and ts.time() >= end_t:
+                        exit_mid, reason = close, "session_end"
+                    if (
+                        reason is None
+                        and not allow_weekend_hold
+                        and friday_flat is not None
+                        and is_friday(ts)
+                        and ts.time() >= friday_flat
+                    ):
+                        exit_mid, reason = close, "friday_flat"
+
+                # Max calendar-day hold (swing safety)
+                if (
+                    reason is None
+                    and max_hold_days > 0
+                    and (ts.normalize() - position["entry_time"].normalize()).days
+                    >= max_hold_days
+                ):
+                    exit_mid, reason = close, "max_hold"
+
+                # After surviving the bar, arm breakeven from close for subsequent bars
+                if reason is None:
+                    new_stop, be_armed = maybe_move_stop_to_breakeven(
+                        side,
+                        entry,
+                        stop,
+                        close,
+                        risk_price,
+                        breakeven_at_r,
+                        already_be=be_armed,
+                    )
+                    position["stop"] = new_stop
+                    position["be_armed"] = be_armed
+                    stop = new_stop
 
                 if reason is not None:
                     fill = exit_fill_price(side, exit_mid, sym, costs_cfg)
@@ -187,8 +248,11 @@ def run_backtest(
                 continue
             if halted_today:
                 continue
-            if is_friday(ts) and ts.time() >= parse_hhmm(
-                strategy_cfg["sessions"]["friday_no_new_entries"]
+            if (
+                not allow_weekend_hold
+                and friday_no_new is not None
+                and is_friday(ts)
+                and ts.time() >= friday_no_new
             ):
                 continue
             if sig.timestamp != ts:
@@ -223,6 +287,7 @@ def run_backtest(
                 "lots": lots,
                 "session": sig.session,
                 "risk_price": risk_price,
+                "be_armed": False,
             }
 
     # Force close leftover
@@ -271,9 +336,11 @@ def run_backtest(
 
 
 def _pnl_usd(side: int, entry: float, exit_px: float, lots: float, symbol: str) -> float:
-    """Approximate USD P&L for 100k notional lots."""
+    """Approximate USD P&L (FX 100k lots; XAU 100 oz)."""
     sym = symbol.upper()
     diff = (exit_px - entry) if side > 0 else (entry - exit_px)
+    if "XAU" in sym:
+        return diff * lots * 100.0
     if sym.endswith("JPY"):
         # quote JPY: convert via exit price
         return diff * lots * 100000.0 / exit_px

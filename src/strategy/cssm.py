@@ -261,44 +261,71 @@ def _scan_session(
         pip = _pip_size(sym, costs_cfg)
         buffer = float(sig_cfg["stop_buffer_pips"]) * pip
         tp_r = float(sig_cfg["take_profit_r"])
+        require_confirm = bool(sig_cfg.get("require_confirm_bar", False))
 
-        for ts, bar in window.iterrows():
+        times = list(window.index)
+        for i, ts in enumerate(times):
             if is_friday(ts) and ts.time() >= sessions["friday_no_new_entries"]:
                 break
             key = (sym, day.normalize(), session_name)
             if key in open_day_trade:
                 break
 
+            bar = window.loc[ts]
             if news_cfg.get("enabled", True) and is_news_blackout(
                 ts, sym, news_df, int(news_cfg.get("blackout_minutes", 60))
             ):
                 continue
 
             close = float(bar["close"])
-            triggered = False
-            if direction > 0 and close > rh:
-                entry = close
+            break_long = direction > 0 and close > rh
+            break_short = direction < 0 and close < rl
+            if not (break_long or break_short):
+                continue
+
+            # v1.2: confirmation on the next M15 close still beyond the range
+            entry_ts = ts
+            entry_px = close
+            if require_confirm:
+                if i + 1 >= len(times):
+                    continue
+                conf_ts = times[i + 1]
+                if is_friday(conf_ts) and conf_ts.time() >= sessions["friday_no_new_entries"]:
+                    continue
+                if news_cfg.get("enabled", True) and is_news_blackout(
+                    conf_ts, sym, news_df, int(news_cfg.get("blackout_minutes", 60))
+                ):
+                    continue
+                conf_close = float(window.loc[conf_ts]["close"])
+                if break_long and not (conf_close > rh and conf_close > close):
+                    continue
+                if break_short and not (conf_close < rl and conf_close < close):
+                    continue
+                entry_ts = conf_ts
+                entry_px = conf_close
+
+            if direction > 0:
+                entry = entry_px
                 stop = rl - buffer
                 risk = entry - stop
                 if risk <= 0:
                     continue
                 tp = entry + tp_r * risk
-                triggered = True
-            elif direction < 0 and close < rl:
-                entry = close
+            else:
+                entry = entry_px
                 stop = rh + buffer
                 risk = stop - entry
                 if risk <= 0:
                     continue
                 tp = entry - tp_r * risk
-                triggered = True
 
-            if not triggered:
-                continue
+            reason = f"{session_name}_break_mom"
+            if require_confirm:
+                reason = f"{session_name}_break_confirm"
 
             signals.append(
                 Signal(
-                    timestamp=ts,
+                    timestamp=entry_ts,
                     symbol=sym,
                     side=direction,
                     entry=entry,
@@ -308,7 +335,7 @@ def _scan_session(
                     session=session_name,
                     range_high=rh,
                     range_low=rl,
-                    reason=f"{session_name}_break_mom",
+                    reason=reason,
                 )
             )
             open_day_trade.add(key)

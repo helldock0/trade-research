@@ -1,8 +1,19 @@
-# CSSM - Cross-Sectional Session Momentum
+# Prop challenge research harness
 
-Greenfield research harness for an FTMO-style prop challenge strategy.
+Greenfield research harness for FTMO-style prop challenge strategies.
 
-**Edge:** overnight FX relative strength + session-range break, volatility regime gated, same-day exits, hard Friday flat.
+**Strategies:**
+- `cssm` — Cross-Sectional Session Momentum — **NO-GO**
+- `orb` — Pure Session Opening Range Breakout — **NO-GO**
+- `csmo` — Cross-Sectional Momentum Open — **NO-GO**
+- `d1_mom` — D1 20d cross-sectional momentum (swing/weekend) — **NO-GO**
+- `htf_pullback` — H4 EMA200 + M15 EMA21 pullback (swing/weekend) — **NO-GO**
+- `fail_fade` — London fail fade of Asian range — **NO-GO**
+- `msnr` — H4 swing MSNR zones + M15 rejection (swing/weekend) — **NO-GO**
+- `vwap_fade` — Session VWAP stretch fade (London/NY) — **NO-GO**
+- `donchian_atr` — H1 Donchian breakout + ATR stop (swing/weekend) — **NO-GO**
+- `xau_htf_pullback` — XAUUSD H4 EMA200 + M15 EMA21 pullback (swing/weekend) — **research / unproven**
+- `htf_adx_pullback` — H4 EMA200 + ADX gate + M15 deep EMA reclaim (swing/weekend) — **NO-GO**
 
 ## Setup
 
@@ -26,34 +37,42 @@ $env:PYTHONIOENCODING="utf-8"
 # 1) Download Dukascopy data (majors -> parquet)
 python scripts/download_data.py
 
-# Offline / CI fallback:
-# python scripts/download_data.py --synthetic --years 8
+# 2) Backtest / FTMO / walk-forward (single strategy)
+python scripts/run_backtest.py --strategy htf_pullback
+python scripts/run_prop_sim.py --strategy htf_pullback
+python scripts/run_walkforward.py --strategy htf_pullback
 
-# 2) Single-period backtest
-python scripts/run_backtest.py
+# 2a) Backtest + FTMO for all strategies (skips walk-forward)
+python scripts/run_all.py
+# optional subset:
+python scripts/run_all.py --strategies cssm,orb
+# Walk-forward / promote remains single-strategy:
+#   python scripts/run_walkforward.py --strategy <id>
+# Outputs: per-strategy reports under reports/ plus aggregate reports/batch_summary.json
 
-# 3) Walk-forward + Monte Carlo + promotion gates
-python scripts/run_walkforward.py
-
-# 4) FTMO 2-Step path simulation
-python scripts/run_prop_sim.py
-
-# 5) Unit tests
+# 3) Unit tests
 python -m pytest -q
 ```
 
 ## Current research status
 
-See `reports/promotion_verdict.md` and `reports/diagnosis.md`.
-
-**First frozen CSSM cycle: NO-GO** — do not trade live or buy a challenge on this version.
+See `reports/diagnosis.md`. CSSM, ORB, CSMO, HTF pullback, HTF ADX pullback, D1 mom, fail_fade, vwap_fade, msnr, and donchian_atr are **NO-GO**. Current cycle: XAUUSD HTF pullback.
 
 ## Promotion
 
-`src/research/promote.py` prints **GO** only if walk-forward / Monte Carlo gates pass. MT5 EA stubs under `mt5/` are written only after GO.
+`src/research/promote.py` prints **GO** only if gates pass. MT5 stubs under `mt5/` only after GO.
 
 ## Config
 
-- `configs/strategy_cssm.yaml` - strategy and sessions
+- `configs/strategy_d1_mom.yaml` - D1 CS momentum (rejected)
+- `configs/strategy_htf_pullback.yaml` - HTF pullback
+- `configs/strategy_orb.yaml` - Pure Session ORB (rejected)
+- `configs/strategy_csmo.yaml` - CSMO (rejected)
+- `configs/strategy_cssm.yaml` - CSSM (rejected)
+- `configs/strategy_msnr.yaml` - MSNR v1 (rejected)
+- `configs/strategy_vwap_fade.yaml` - Session VWAP fade (rejected)
+- `configs/strategy_donchian_atr.yaml` - Donchian + ATR H1 (rejected)
+- `configs/strategy_xau_htf_pullback.yaml` - XAUUSD HTF pullback (research)
+- `configs/strategy_htf_adx_pullback.yaml` - HTF ADX pullback (rejected)
 - `configs/ftmo_2step.yaml` - prop rules
 - `configs/costs.yaml` - spreads / slippage / commission
