@@ -127,9 +127,14 @@ def generate_synthetic_ohlc(
     idx = pd.date_range(start, end, freq=rule, tz="UTC")
     # weekend gaps
     idx = idx[idx.dayofweek < 5]
-    spot = {"EURUSD": 1.10, "GBPUSD": 1.25, "USDJPY": 145.0, "AUDUSD": 0.67, "USDCAD": 1.35}[
-        symbol
-    ]
+    spot = {
+        "EURUSD": 1.10,
+        "GBPUSD": 1.25,
+        "USDJPY": 145.0,
+        "AUDUSD": 0.67,
+        "USDCAD": 1.35,
+        "XAUUSD": 1900.0,
+    }.get(symbol, 1.10)
     rets = rng.normal(0, 0.00035, size=len(idx))
     # mild session seasonality
     hour = idx.hour

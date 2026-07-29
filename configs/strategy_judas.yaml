@@ -1,0 +1,54 @@
+# ICT Judas Swing (Asia H/L) — M15 proxy of 5m model (research / unproven)
+#
+# Conventions:
+# - Asia = 00:00–07:00 UTC; entry window = london_start..london_end (first ~2.5h)
+# - Sweep of Asia H/L then MSS = close beyond sweep-bar extreme
+# - Longs only below Asia mid; shorts only above; invalidate >50% extension
+# - Trendline liquidity omitted; TP = opposite Asia side (use_signal_tp)
+strategy: judas
+
+universe:
+  - GBPUSD
+  - EURUSD
+  - AUDUSD
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "09:30"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  invalidate_extension: 0.5
+  stop_buffer_pips: 1.0
+  min_range_pips: 5.0
+  max_mss_bars: 8
+  take_profit_r: 1.0
+  use_signal_tp: true
+  exit_mode: session
+  allow_weekend_hold: false
+  max_hold_days: 0
+  breakeven_at_r: 1.5
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

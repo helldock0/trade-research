@@ -1,0 +1,55 @@
+# Bard FX Nowick compensation play — M15 (research / unproven)
+#
+# Conventions:
+# - Trend = close vs EMA(50)
+# - Nowick = open≈low (bull) / open≈high (bear) within nowick_wick_tol_pips
+# - Structure SL = min/max of prior structure_lookback bars ± stop_buffer_pips
+# - Retest limit at Nowick open within retest_max_bars; TP 1R
+# - Session = london_start..london_end (PDF ~07:00–13:00 UTC)
+strategy: nowick
+
+universe:
+  - AUDUSD
+  - USDJPY
+  - GBPUSD
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "13:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  trend_ema_period: 50
+  retest_max_bars: 9
+  structure_lookback: 5
+  stop_buffer_pips: 3.0
+  nowick_wick_tol_pips: 0.2
+  take_profit_r: 1.0
+  exit_mode: session
+  allow_weekend_hold: false
+  max_hold_days: 0
+  breakeven_at_r: 0.0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+news:
+  enabled: true
+  blackout_minutes: 60
+  calendar_csv: data/news_calendar.csv
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

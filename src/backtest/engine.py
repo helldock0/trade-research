@@ -266,7 +266,11 @@ def run_backtest(
             risk_price = abs(fill - sig.stop)
             if risk_price <= 0:
                 continue
-            if sig.side > 0:
+            fill_delta = fill - float(sig.entry)
+            if bool(strategy_cfg.get("signal", {}).get("use_signal_tp", False)):
+                # Preserve absolute TP geometry; shift by fill slippage vs intended mid
+                tp = float(sig.take_profit) + fill_delta
+            elif sig.side > 0:
                 tp = fill + float(strategy_cfg["signal"]["take_profit_r"]) * risk_price
             else:
                 tp = fill - float(strategy_cfg["signal"]["take_profit_r"]) * risk_price

@@ -19,10 +19,28 @@ Detailed run artifacts stay in `reports/` (local only).
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
 
-## Active
+## Active (PDF proxies — untested on live parquet)
 
-None. All current lines are NO-GO.
+| Strategy | Source PDF | Notes |
+|----------|------------|-------|
+| `ebp` | Omar Agag EBP | H4 engulfing + fib 25/50/75 limit/market; XAU+majors |
+| `nowick` | Bard FX Nowick | M15 no-wick + 9-bar retest; trend=EMA50; structure SL |
+| `fib_swing` | Fib Retracement Swing | H4 EMA tap + fractal 0.71 align + reversal |
+| `judas` | ICT Judas Asia | M15 Asia sweep + MSS; no trendline liquidity; `use_signal_tp` |
+
+## Parked (not coded — discretionary / incomplete / needs M1–M5)
+
+| Strategy PDF | Why parked |
+|--------------|------------|
+| Matt’s Wicks | Checklist only; no complete entry/exit algorithm |
+| Waqar Asim Scalping | Discretionary S/D + inducement; vague SL; needs M1 |
+| Ali Khan DRT | Range/SMT detection too soft without invented rules |
+| Doyle Exchange S/D | Objective OB/impulse undefined; needs 5m |
+| Trader Mike Failed 2s | Needs 1H/15m/1m + FVG/MSB stack |
+| Quarterly Theory + SMT | Dual-asset SSMT; defer until SMT feature module |
+
+Do not invent hard rules for parked PDFs unless supplied explicitly.
 
 ## Next
 
-Pick a new hypothesis (do not stack knobs on rejected XAU / majors HTF lines).
+Run `ebp` / `nowick` / `fib_swing` / `judas` on real `data/parquet` (or synthetic smoke), then FTMO + walk-forward. Do not stack knobs on rejected HTF/XAU lines.
