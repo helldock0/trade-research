@@ -18,6 +18,7 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
+| `asiakz_ny` | NAS100 Asian range (20:00-00:00 NY = 5:30-9:30 IST summer) traded 08:00-16:55 NY with v3 mechanics (`--grid modes`): continuation -88.2R / -280.9R (2023-26 / 2018-22), fresh break -50.5R / -63.8R, sweep reversal -29.2R / -13.8R. London breaks the Asian range before NY on 98% of days | NO-GO |
 
 ## Active
 

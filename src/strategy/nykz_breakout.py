@@ -1,7 +1,10 @@
 """NY kill-zone breakout — NAS100 M5 with real bid/ask fills.
 
 Rules (session times are New York local, so US DST is handled):
-- Range = bid high/low of bars opening in [range_start, range_end). NY
+- Range = bid high/low of bars opening in [range_start, range_end); when
+  range_start >= range_end the range starts on the previous NY day (e.g. an
+  Asian range 20:00-00:00). Breaks are looked for from entry_start (default
+  range_end). NY
   weekdays listed in skip_weekdays ("Mon".."Fri") are not traded, nor NY
   days with a news_calendar event listed in skip_news_events (with
   only_news_days, only those days are traded). Volatility filters skip days
@@ -11,6 +14,10 @@ Rules (session times are New York local, so US DST is handled):
   warm the filters up).
 - The first later bar whose bid close is above the range high (long) or below
   the range low (short) is the break bar. One attempt per NY day.
+  break_mode "fresh" only counts a break whose previous bar closed inside
+  the range; "sweep_reversal" trades the other way when a bar that traded
+  (or whose previous bar closed) beyond a side closes back inside the range,
+  and confirm_close then needs the next bar to stay back inside.
   Optional "clean break" filters: the close must clear the level by
   min_break_points / min_break_pct of price, and the body must be at least
   min_body_vs_range x the average range-bar body. With confirm_close, the
@@ -160,6 +167,17 @@ def _daily_atr_rank(bars: pd.DataFrame, local: pd.DatetimeIndex, lookback: int) 
     return _pctile_vs_past(atr_pct, lookback).to_dict()
 
 
+def _sweep_side(h: float, l: float, c: float, prev_c: float, rh: float, rl: float) -> int:
+    """-1 when price ran above the range and closed back inside, +1 for the low."""
+    if not rl <= c <= rh:
+        return 0
+    above = h > rh or prev_c > rh
+    below = l < rl or prev_c < rl
+    if above == below:
+        return 0
+    return -1 if above else 1
+
+
 def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
     """+1 / -1 when a bar closes cleanly above / below the range, else 0."""
     if abs(c - o) < body_floor:
@@ -224,6 +242,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     sig = cfg["signal"]
     range_start = _minutes(sess["range_start"])
     range_end = _minutes(sess["range_end"])
+    entry_start = _minutes(sess.get("entry_start", sess["range_end"]))
+    overnight = range_start >= range_end
     cutoff = _minutes(sess["entry_cutoff"])
     min_bars = int(sig.get("min_range_bars", 1))
     buffer = float(sig["stop_buffer_points"])
@@ -232,6 +252,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     min_frac = float(sig.get("min_break_pct", 0.0)) / 100
     min_body = float(sig.get("min_body_vs_range", 0.0))
     confirm = bool(sig.get("confirm_close", False))
+    break_mode = sig.get("break_mode", "close_beyond")
+    reversal = break_mode == "sweep_reversal"
     stop_prior = bool(sig.get("stop_includes_prior_bar", False))
     atr_stop = float(sig.get("atr_stop_mult", 0.0))
     min_stop_atr = float(sig.get("min_stop_atr", 0.0))
@@ -260,14 +282,21 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     widths: list[float] = []  # past kill-zone range widths / price
 
     setups: list[Setup] = []
+    prev = None
     for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
+        rows = rows.to_numpy()
+        last, prev = prev, (day, rows)
         if day.strftime("%a") in skip_days:
             continue
         if news_days is not None and (str(day) in news_days) != only_news:
             continue
-        rows = rows.to_numpy()
         m = minute[rows]
-        rng = rows[(m >= range_start) & (m < range_end)]
+        if overnight:
+            if last is None or (day - last[0]).days != 1:
+                continue
+            rng = np.concatenate([last[1][minute[last[1]] >= range_start], rows[m < range_end]])
+        else:
+            rng = rows[(m >= range_start) & (m < range_end)]
         if len(rng) < min_bars:
             continue
         rh, rl = float(hi[rng].max()), float(lo[rng].min())
@@ -281,14 +310,20 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
             continue
         body_floor = min_body * float(np.abs(cl[rng] - op[rng]).mean())
 
-        scan = rows[m >= range_end]
+        scan = rows[m >= entry_start]
         for k in range(len(scan) - 1):
             b, e = scan[k], scan[k + 1]
-            side = _break_side(op[b], cl[b], rh, rl, max(min_pts, min_frac * cl[b]), body_floor)
+            if reversal:
+                side = _sweep_side(hi[b], lo[b], cl[b], cl[b - 1], rh, rl)
+            else:
+                side = _break_side(op[b], cl[b], rh, rl, max(min_pts, min_frac * cl[b]), body_floor)
+                if break_mode == "fresh" and side and not rl <= cl[b - 1] <= rh:
+                    side = 0  # already outside before this bar
             if side == 0:
                 continue
-            if confirm and not (cl[e] > rh if side > 0 else cl[e] < rl):
-                continue  # failed confirmation: wait for the next break
+            level = rh if (side > 0) != reversal else rl  # the side the confirming close must hold
+            if confirm and side * (cl[e] - level) <= 0:
+                continue  # failed confirmation: wait for the next signal
             if minute[e] + BAR_MINUTES > cutoff:
                 break
             c1 = fill = None

@@ -368,3 +368,61 @@ def test_prop_config_is_v3_rules_at_1pct_risk():
     assert prop["session"] == v3["session"]
     assert prop["signal"] == v3["signal"]
     assert prop["risk"]["risk_per_trade_pct"] == 1.0
+
+
+ASIA = {
+    "session": {**CFG["session"], "range_start": "20:00", "range_end": "00:00", "entry_start": "08:00"},
+    "signal": {**CFG["signal"], "min_range_bars": 40, "confirm_close": True},
+}
+
+
+def _asia_day(pre_ny: tuple, ny: list[tuple]) -> pd.DataFrame:
+    """Asian range 20:00-24:00 NY on Jul 9 (high 101, low 99), then Jul 10 from 00:00:
+    96 pre-New-York bars of `pre_ny`, then `ny` from 08:00."""
+    asia = _bars("2024-07-09", [FLAT] * 48, start="20:00")
+    return pd.concat([asia, _bars("2024-07-10", [pre_ny] * 96 + ny, start="00:00")])
+
+
+def _asia_cfg(**signal) -> dict:
+    return {"session": ASIA["session"], "signal": {**ASIA["signal"], **signal}}
+
+
+def test_asian_range_comes_from_the_previous_evening():
+    bars = _asia_day((100, 100.5, 99.5, 100), [(100, 103, 100, 102), (102, 104, 101.5, 103), (103, 104, 102.5, 103.5)])
+    (s,) = find_setups(bars, _asia_cfg())
+    assert (s.day, s.range_high, s.range_low, s.side) == ("2024-07-10", 101, 99, 1)
+    assert s.break_time == pd.Timestamp("2024-07-10 08:00", tz="America/New_York")
+
+
+def test_continuation_takes_price_already_outside_at_the_ny_open():
+    outside = (102, 102.5, 101.5, 102)  # London left price above the Asian high
+    bars = _asia_day(outside, [outside, outside, outside])
+    (s,) = find_setups(bars, _asia_cfg())
+    assert s.break_time == pd.Timestamp("2024-07-10 08:00", tz="America/New_York")
+    assert find_setups(bars, _asia_cfg(break_mode="fresh")) == []
+
+
+def test_fresh_break_needs_a_return_inside_first():
+    outside = (102, 102.5, 101.5, 102)
+    ny = [outside, (102, 102, 100, 100.5), (100.5, 102.5, 100.4, 102), (102, 103, 101.8, 102.5), (102.5, 103, 102, 102.8)]
+    (s,) = find_setups(_asia_day(outside, ny), _asia_cfg(break_mode="fresh"))
+    assert s.break_time == pd.Timestamp("2024-07-10 08:10", tz="America/New_York")
+
+
+def test_sweep_reversal_shorts_back_inside_after_running_the_high():
+    outside = (102, 102.5, 101.5, 102)
+    ny = [outside, (102, 102.2, 100.2, 100.5), (100.5, 100.8, 99.8, 100), (100, 100.5, 99.5, 99.8)]
+    (s,) = find_setups(_asia_day(outside, ny), _asia_cfg(break_mode="sweep_reversal"))
+    assert s.side == -1
+    assert s.break_time == pd.Timestamp("2024-07-10 08:05", tz="America/New_York")  # first close back inside
+    assert s.entry == 100.0  # next bar stays inside: sell its bid close
+
+
+def test_asia_config_matches_v3_mechanics():
+    from src.config import load_strategy_config
+
+    v3 = load_strategy_config("strategy_nykz_breakout.yaml")
+    asia = load_strategy_config("strategy_asiakz_ny.yaml")
+    assert asia["session"]["range_start"] == "20:00" and asia["session"]["entry_start"] == "08:00"
+    for k in ("take_profit_r", "confirm_close", "atr_stop_mult", "atr_period", "stop_buffer_points"):
+        assert asia["signal"][k] == v3["signal"][k]

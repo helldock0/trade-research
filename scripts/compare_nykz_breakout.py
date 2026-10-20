@@ -8,6 +8,7 @@
 --grid session: the config's rules with earlier entry cutoffs (New York time).
 --grid news:  the config's rules, skipping (or only trading) US high-impact news days.
 --grid vol:   the config's rules, skipping low-volatility days.
+--grid modes: the config's rules with each break_mode (continuation / fresh / sweep reversal).
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -107,6 +108,11 @@ VOL_VARIANTS = [("config rules", "every day", {})] + [
     for name, key in (("daily ATR", "min_daily_atr_pctile"), ("KZ range", "min_range_pctile"))
     for q in (0.2, 0.33)
 ]
+MODE_VARIANTS = [
+    ("config rules", "continuation", {"break_mode": "close_beyond"}),
+    ("config rules", "fresh break", {"break_mode": "fresh"}),
+    ("config rules", "sweep reversal", {"break_mode": "sweep_reversal"}),
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -124,6 +130,7 @@ GRIDS = {
     "session": ({}, SESSION_VARIANTS, ("rules", "entry window")),
     "news": ({}, NEWS_VARIANTS, ("rules", "news days")),
     "vol": ({}, VOL_VARIANTS, ("rules", "volatility filter")),
+    "modes": ({}, MODE_VARIANTS, ("rules", "break mode")),
 }
 
 
