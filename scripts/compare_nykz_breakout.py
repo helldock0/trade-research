@@ -3,6 +3,7 @@
 --grid break: clean-break rules x stop placement, each from plain v1 rules.
 --grid exit:  stop size x trailing, on the config's entry rule.
 --grid fvg:   next-close vs FVG retest-and-confirm and FVG limit entries, with v2 and ATR stops.
+--grid rr:    the config's rules with different take-profit targets.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -82,6 +83,9 @@ FVG_VARIANTS = [
 ]
 
 
+RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
+
+
 def _product(rules_a: list, rules_b: list) -> list:
     return [(a, b, {**cfg_a, **cfg_b}) for a, cfg_a in rules_a for b, cfg_b in rules_b]
 
@@ -91,6 +95,7 @@ GRIDS = {
     "break": ({**PLAIN_ENTRY, **V1_RULES, **FIXED_EXITS}, _product(BREAK_RULES, STOP_RULES), ("break rule", "stop")),
     "exit": ({**PLAIN_ENTRY, **FIXED_EXITS}, _product(STOP_SIZES, TRAILS), ("stop", "trail")),
     "fvg": ({**PLAIN_ENTRY, **FIXED_EXITS}, FVG_VARIANTS, ("entry", "stop")),
+    "rr": ({}, RR_VARIANTS, ("rules", "target")),
 }
 
 
