@@ -28,6 +28,13 @@ BREAK_RULES = [
     ("next candle confirms", {"confirm_close": True}),
     ("body >= 1.5x range avg", {"min_body_vs_range": 1.5}),
 ]
+V1_RULES = {
+    "min_break_points": 0.0,
+    "min_break_pct": 0.0,
+    "min_body_vs_range": 0.0,
+    "confirm_close": False,
+    "stop_includes_prior_bar": False,
+}
 STOP_RULES = [
     ("break candle", {}),
     ("break + prior candle", {"stop_includes_prior_bar": True}),
@@ -65,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
     rows = []
     for break_name, break_cfg in BREAK_RULES:
         for stop_name, stop_cfg in STOP_RULES:
-            variant = {**cfg, "signal": {**cfg["signal"], **break_cfg, **stop_cfg}}
+            variant = {**cfg, "signal": {**cfg["signal"], **V1_RULES, **break_cfg, **stop_cfg}}
             row: dict = {"break_rule": break_name, "stop_rule": stop_name}
             for period, period_bars in periods.items():
                 trades, s = run(period_bars, variant)

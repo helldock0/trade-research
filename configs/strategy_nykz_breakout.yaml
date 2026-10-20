@@ -1,4 +1,5 @@
-# NY kill-zone breakout v1 — NAS100 M5, real Dukascopy bid/ask spread
+# NY kill-zone breakout v2 — NAS100 M5, real Dukascopy bid/ask spread
+# v2: a break counts only when the next candle also closes outside the range.
 # Run: python scripts/run_nykz_breakout.py
 strategy: nykz_breakout
 
@@ -18,6 +19,7 @@ signal:
   min_range_bars: 30       # skip days with a patchy range (full range = 36 bars)
   stop_buffer_points: 2.0  # beyond the break bar's low (long) / high (short)
   take_profit_r: 4.0
+  confirm_close: true      # else wait for the next break (v1: false)
 
 data:
   start: "2023-01-01"
