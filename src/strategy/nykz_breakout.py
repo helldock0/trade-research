@@ -14,7 +14,13 @@ Rules (session times are New York local, so US DST is handled):
 - Stop = break bar low - buffer (long) / high + buffer (short); with
   stop_includes_prior_bar, the bar before the break counts too. The day is
   skipped when the entry bar's bid close is at or beyond the stop.
-- Target = entry +/- take_profit_r * |entry - stop|, measured from the fill.
+  atr_stop_mult replaces that stop with entry -/+ mult x ATR (M5, at entry);
+  min_stop_atr only widens a stop closer than that many ATRs.
+- Target = entry +/- take_profit_r * |entry - stop|, measured from the fill;
+  take_profit_r 0 means no target.
+- Optional moving stop, updated after each bar closes: breakeven_at_r moves
+  it to entry once the best price reaches that many R; trail_atr_mult trails
+  it that many ATRs behind the best price once trail_start_r is reached.
 - Held until stop or target (overnight and over weekends). One trade at a
   time: a day that breaks while a trade is still open is skipped.
 - Long exits trigger and fill on bid, short exits on ask. A bar that opens
@@ -49,9 +55,10 @@ class Setup:
     entry_pos: int  # row of the entry bar in the bid/ask frame
     entry: float
     stop: float
-    take_profit: float
+    take_profit: float | None
     risk_points: float
     spread_points: float
+    atr_points: float
 
 
 @dataclass
@@ -63,10 +70,11 @@ class KZTrade:
     break_time: pd.Timestamp
     entry_time: pd.Timestamp
     entry: float
-    stop: float
-    take_profit: float
+    stop: float  # initial stop
+    take_profit: float | None
     risk_points: float
     spread_points: float
+    atr_points: float
     exit_time: pd.Timestamp  # open of the bar the exit happened in (UTC)
     exit_price: float
     exit_reason: str
@@ -91,6 +99,12 @@ def without_spread(bars: pd.DataFrame) -> pd.DataFrame:
 def _minutes(hhmm: str) -> int:
     t = parse_hhmm(hhmm)
     return t.hour * 60 + t.minute
+
+
+def _atr(h: np.ndarray, l: np.ndarray, c: np.ndarray, period: int) -> np.ndarray:
+    prev = np.concatenate([[c[0]], c[:-1]])
+    tr = np.maximum(h - l, np.maximum(np.abs(h - prev), np.abs(l - prev)))
+    return pd.Series(tr).rolling(period, min_periods=1).mean().to_numpy()
 
 
 def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
@@ -119,6 +133,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     min_body = float(sig.get("min_body_vs_range", 0.0))
     confirm = bool(sig.get("confirm_close", False))
     stop_prior = bool(sig.get("stop_includes_prior_bar", False))
+    atr_stop = float(sig.get("atr_stop_mult", 0.0))
+    min_stop_atr = float(sig.get("min_stop_atr", 0.0))
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
@@ -127,6 +143,7 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     lo = bars["low"].to_numpy()
     cl = bars["close"].to_numpy()
     ask_cl = bars["ask_close"].to_numpy()
+    atr = _atr(hi, lo, cl, int(sig.get("atr_period", 14)))
 
     setups: list[Setup] = []
     for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
@@ -160,6 +177,11 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
                 if cl[e] >= stop:
                     break
                 entry = float(cl[e])
+            a = float(atr[e])
+            if atr_stop > 0:
+                stop = entry - side * atr_stop * a
+            elif abs(entry - stop) < min_stop_atr * a:
+                stop = entry - side * min_stop_atr * a
             risk = abs(entry - stop)
 
             setups.append(
@@ -173,9 +195,10 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
                     entry_pos=int(e),
                     entry=entry,
                     stop=stop,
-                    take_profit=entry + side * tp_r * risk,
+                    take_profit=entry + side * tp_r * risk if tp_r > 0 else None,
                     risk_points=risk,
                     spread_points=float(ask_cl[e] - cl[e]),
+                    atr_points=a,
                 )
             )
             break
@@ -183,40 +206,56 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
 
 
 def _first_exit(
-    side: int,
-    stop: float,
-    tp: float,
+    s: Setup,
     o: np.ndarray,
     h: np.ndarray,
     l: np.ndarray,
     c: np.ndarray,
-    start: int,
+    be_r: float = 0.0,
+    trail_pts: float = 0.0,
+    trail_start_r: float = 1.0,
 ) -> tuple[int, float, str]:
-    n = len(o)
-    for j in range(start, n):
+    """First bar to hit the stop or target. A moved stop applies from the next bar."""
+    side, entry, tp = s.side, s.entry, s.take_profit
+    stop, best = s.stop, entry
+    for j in range(s.entry_pos + 1, len(o)):
+        reason = "stop" if stop == s.stop else "breakeven" if stop == entry else "trail"
         if side > 0:
             if o[j] <= stop:
-                return j, float(o[j]), "stop_gap"
-            if o[j] >= tp:
+                return j, float(o[j]), reason + "_gap"
+            if tp is not None and o[j] >= tp:
                 return j, float(o[j]), "tp_gap"
             if l[j] <= stop:
-                return j, stop, "stop"
-            if h[j] >= tp:
+                return j, stop, reason
+            if tp is not None and h[j] >= tp:
                 return j, tp, "tp"
+            best = max(best, float(h[j]))
         else:
             if o[j] >= stop:
-                return j, float(o[j]), "stop_gap"
-            if o[j] <= tp:
+                return j, float(o[j]), reason + "_gap"
+            if tp is not None and o[j] <= tp:
                 return j, float(o[j]), "tp_gap"
             if h[j] >= stop:
-                return j, stop, "stop"
-            if l[j] <= tp:
+                return j, stop, reason
+            if tp is not None and l[j] <= tp:
                 return j, tp, "tp"
-    return n - 1, float(c[n - 1]), "data_end"
+            best = min(best, float(l[j]))
+        gain_r = side * (best - entry) / s.risk_points
+        if be_r and gain_r >= be_r:
+            stop = max(stop, entry) if side > 0 else min(stop, entry)
+        if trail_pts and gain_r >= trail_start_r:
+            stop = max(stop, best - trail_pts) if side > 0 else min(stop, best + trail_pts)
+    return len(o) - 1, float(c[-1]), "data_end"
 
 
-def simulate(bars: pd.DataFrame, setups: list[Setup]) -> tuple[list[KZTrade], int]:
+def simulate(
+    bars: pd.DataFrame, setups: list[Setup], sig: dict[str, Any] | None = None
+) -> tuple[list[KZTrade], int]:
     """Fill setups one at a time. Returns (trades, setups skipped while busy)."""
+    sig = sig or {}
+    be_r = float(sig.get("breakeven_at_r", 0.0))
+    trail_mult = float(sig.get("trail_atr_mult", 0.0))
+    trail_start_r = float(sig.get("trail_start_r", 1.0))
     bid = [bars[c].to_numpy() for c in OHLC]
     ask = [bars[f"ask_{c}"].to_numpy() for c in OHLC]
 
@@ -228,7 +267,7 @@ def simulate(bars: pd.DataFrame, setups: list[Setup]) -> tuple[list[KZTrade], in
             skipped += 1
             continue
         px = bid if s.side > 0 else ask
-        j, exit_px, reason = _first_exit(s.side, s.stop, s.take_profit, *px, start=s.entry_pos + 1)
+        j, exit_px, reason = _first_exit(s, *px, be_r, trail_mult * s.atr_points, trail_start_r)
         exit_time = bars.index[j]
         busy_until = exit_time + BAR
 
@@ -288,7 +327,7 @@ def summarize(trades: list[KZTrade]) -> dict[str, Any]:
 
 def run(bars: pd.DataFrame, cfg: dict[str, Any]) -> tuple[list[KZTrade], dict[str, Any]]:
     setups = find_setups(bars, cfg)
-    trades, skipped = simulate(bars, setups)
+    trades, skipped = simulate(bars, setups, cfg["signal"])
     summary = {"n_setups": len(setups), "skipped_open_trade": skipped, **summarize(trades)}
     return trades, summary
 

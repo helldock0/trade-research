@@ -1,4 +1,7 @@
-"""Compare NY kill-zone breakout variants: clean-break rules x stop rules.
+"""Compare NY kill-zone breakout variants, one grid at a time.
+
+--grid break: clean-break rules x stop placement, each from plain v1 rules.
+--grid exit:  stop size x trailing, on the config's entry rule.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -39,6 +42,32 @@ STOP_RULES = [
     ("break candle", {}),
     ("break + prior candle", {"stop_includes_prior_bar": True}),
 ]
+FIXED_EXITS = {
+    "atr_stop_mult": 0.0,
+    "min_stop_atr": 0.0,
+    "breakeven_at_r": 0.0,
+    "trail_atr_mult": 0.0,
+    "trail_start_r": 1.0,
+    "take_profit_r": 4.0,
+}
+STOP_SIZES = [
+    ("break candle", {}),
+    ("1.5x ATR", {"atr_stop_mult": 1.5}),
+    ("2x ATR", {"atr_stop_mult": 2.0}),
+    ("3x ATR", {"atr_stop_mult": 3.0}),
+    ("candle, min 1.5x ATR", {"min_stop_atr": 1.5}),
+]
+TRAILS = [
+    ("fixed 4R", {}),
+    ("breakeven at 1R", {"breakeven_at_r": 1.0}),
+    ("trail 2x ATR, 4R target", {"trail_atr_mult": 2.0}),
+    ("trail 2x ATR, no target", {"trail_atr_mult": 2.0, "take_profit_r": 0.0}),
+]
+GRIDS = {
+    # name: (settings every variant starts from, first rules, second rules, column labels)
+    "break": ({**V1_RULES, **FIXED_EXITS}, BREAK_RULES, STOP_RULES, ("break rule", "stop")),
+    "exit": (FIXED_EXITS, STOP_SIZES, TRAILS, ("stop", "trail")),
+}
 
 
 def _slice(bars: pd.DataFrame, start: str, end: str | None) -> pd.DataFrame:
@@ -53,6 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--config", default="strategy_nykz_breakout.yaml")
     parser.add_argument("--check-start", default="2018-01-01")
     parser.add_argument("--check-end", default="2022-12-31")
+    parser.add_argument("--grid", choices=sorted(GRIDS), default="break")
     parser.add_argument("--day", default=None, help="also show each variant's trade on this NY date")
     args = parser.parse_args(argv)
 
@@ -69,11 +99,12 @@ def main(argv: list[str] | None = None) -> None:
         "check": _slice(bars, args.check_start, args.check_end),
     }
 
+    base, rules_a, rules_b, (label_a, label_b) = GRIDS[args.grid]
     rows = []
-    for break_name, break_cfg in BREAK_RULES:
-        for stop_name, stop_cfg in STOP_RULES:
-            variant = {**cfg, "signal": {**cfg["signal"], **V1_RULES, **break_cfg, **stop_cfg}}
-            row: dict = {"break_rule": break_name, "stop_rule": stop_name}
+    for name_a, cfg_a in rules_a:
+        for name_b, cfg_b in rules_b:
+            variant = {**cfg, "signal": {**cfg["signal"], **base, **cfg_a, **cfg_b}}
+            row: dict = {"a": name_a, "b": name_b}
             for period, period_bars in periods.items():
                 trades, s = run(period_bars, variant)
                 row[period] = {
@@ -88,14 +119,14 @@ def main(argv: list[str] | None = None) -> None:
                     )
             rows.append(row)
 
-    out = PROJECT_ROOT / "reports" / f"compare_{cfg['strategy']}.json"
+    out = PROJECT_ROOT / "reports" / f"compare_{cfg['strategy']}_{args.grid}.json"
     out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
 
-    print(f"{'break rule':24} {'stop':22} {'trades':>6} {'win%':>6} {'total R':>8} {'R/trade':>8} {'maxDD R':>8} | "
+    print(f"{label_a:24} {label_b:24} {'trades':>6} {'win%':>6} {'total R':>8} {'R/trade':>8} {'maxDD R':>8} | "
           f"{'2018-22 R':>9} {'R/trade':>8}" + (f" | {args.day}" if args.day else ""))
     for r in rows:
         t, c = r["test"], r["check"]
-        line = (f"{r['break_rule']:24} {r['stop_rule']:22} {t['n_trades']:6d} {t['win_rate']:6.1%} "
+        line = (f"{r['a']:24} {r['b']:24} {t['n_trades']:6d} {t['win_rate']:6.1%} "
                 f"{t['total_r']:+8.1f} {t['expectancy_r']:+8.3f} {t['max_dd_r']:8.1f} | "
                 f"{c['total_r']:+9.1f} {c['expectancy_r']:+8.3f}")
         if args.day:

@@ -217,3 +217,43 @@ def test_stop_includes_prior_bar():
     # Break bar is 10:05 (close 98 < 99); prior bar's high 100.5 beats the break bar's 100.
     assert find_setups(bars, CFG)[0].stop == 102.0
     assert find_setups(bars, _cfg(stop_includes_prior_bar=True))[0].stop == 102.5
+
+
+# Every bar below has a true range of 2, so ATR(14) = 2 at entry.
+ATR_BREAK = [(100.5, 102, 100, 101.5), (101.5, 102.5, 100.5, 102)]  # entry: ask 102.5, candle stop 98
+
+
+def test_atr_stop_replaces_candle_stop():
+    (s,) = find_setups(_day("2024-07-10", ATR_BREAK), _cfg(atr_stop_mult=1.5))
+    assert s.atr_points == pytest.approx(2.0)
+    assert (s.entry, s.stop, s.risk_points) == (102.5, pytest.approx(99.5), pytest.approx(3.0))
+    assert s.take_profit == pytest.approx(114.5)
+
+
+def test_min_stop_atr_only_widens_tight_stops():
+    bars = _day("2024-07-10", ATR_BREAK)
+    assert find_setups(bars, _cfg(min_stop_atr=2))[0].stop == 98.0  # 4.5 away >= 4
+    assert find_setups(bars, _cfg(min_stop_atr=3))[0].stop == pytest.approx(96.5)  # widened to 6
+
+
+def test_breakeven_after_1r():
+    bars = _day("2024-07-10", ATR_BREAK + [(102, 107.5, 101.5, 107), (107, 107.5, 102, 102.5)])
+    assert run(bars, CFG)[0][0].exit_reason == "data_end"
+    (t,) = run(bars, _cfg(breakeven_at_r=1.0))[0]
+    assert (t.exit_reason, t.exit_price, t.r_multiple) == ("breakeven", 102.5, 0.0)
+
+
+def test_atr_trail_without_target_applies_from_next_bar():
+    bars = _day(
+        "2024-07-10",
+        ATR_BREAK
+        + [
+            (102, 110, 101.5, 109.5),  # +1.7R: trail to 108 from the next bar, not this one
+            (109.5, 112, 109, 111.5),  # trail to 110
+            (111.5, 111.6, 109.5, 110),  # hits 110
+        ],
+    )
+    (t,) = run(bars, _cfg(trail_atr_mult=1.0, trail_start_r=1.0, take_profit_r=0))[0]
+    assert t.take_profit is None
+    assert (t.exit_reason, t.exit_price) == ("trail", 110.0)
+    assert t.r_multiple == pytest.approx((110 - 102.5) / 4.5)
