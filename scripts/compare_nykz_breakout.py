@@ -5,6 +5,7 @@
 --grid fvg:   next-close vs FVG retest-and-confirm and FVG limit entries, with v2 and ATR stops.
 --grid rr:    the config's rules with different take-profit targets.
 --grid weekday: the config's rules, skipping one weekday at a time.
+--grid session: the config's rules with earlier entry cutoffs (New York time).
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -87,6 +88,10 @@ FVG_VARIANTS = [
 WEEKDAY_VARIANTS = [("config rules", "every day", {})] + [
     ("config rules", f"skip {d}", {"skip_weekdays": [d]}) for d in ("Mon", "Tue", "Wed", "Thu", "Fri")
 ]
+SESSION_VARIANTS = [
+    ("config rules", f"entries until {hhmm}" + (" (overlap)" if hhmm == "12:00" else ""), {"session": {"entry_cutoff": hhmm}})
+    for hhmm in ("10:30", "11:00", "11:30", "12:00", "13:00", "14:00", "15:00", "16:55")
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -101,6 +106,7 @@ GRIDS = {
     "fvg": ({**PLAIN_ENTRY, **FIXED_EXITS}, FVG_VARIANTS, ("entry", "stop")),
     "rr": ({}, RR_VARIANTS, ("rules", "target")),
     "weekday": ({}, WEEKDAY_VARIANTS, ("rules", "days")),
+    "session": ({}, SESSION_VARIANTS, ("rules", "entry window")),
 }
 
 
@@ -136,7 +142,9 @@ def main(argv: list[str] | None = None) -> None:
     base, variants, (label_a, label_b) = GRIDS[args.grid]
     rows = []
     for name_a, name_b, extra in variants:
-        variant = {**cfg, "signal": {**cfg["signal"], **base, **extra}}
+        extra = dict(extra)
+        session = {**cfg["session"], **extra.pop("session", {})}
+        variant = {**cfg, "session": session, "signal": {**cfg["signal"], **base, **extra}}
         row: dict = {"a": name_a, "b": name_b}
         for period, period_bars in periods.items():
             trades, s = run(period_bars, variant)

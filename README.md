@@ -61,6 +61,7 @@ python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakev
 python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close
 python scripts/compare_nykz_breakout.py --grid rr      # take-profit targets on the config's rules
 python scripts/compare_nykz_breakout.py --grid weekday # skip one weekday at a time
+python scripts/compare_nykz_breakout.py --grid session # earlier entry cutoffs (e.g. London overlap)
 
 # 3) Tests
 python -m pytest -q
