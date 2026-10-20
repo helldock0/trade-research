@@ -60,6 +60,7 @@ python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-
 python scripts/run_nykz_breakout.py
 python scripts/run_nykz_breakout.py --config strategy_nykz_breakout_prop.yaml   # prop (v3 rules)
 python scripts/prop_sim_nykz_breakout.py   # FTMO 2-step pass rates for the prop config at several risk levels
+python scripts/markets_nykz_breakout.py   # v3 on other indices and FX majors (needs their M5 bid/ask files)
 python scripts/compare_nykz_breakout.py --grid break   # clean-break / stop placement, 2023-26 + 2018-22
 python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakeven / trailing
 python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close
