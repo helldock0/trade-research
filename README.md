@@ -20,7 +20,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
 | `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, next-candle confirm, 2x ATR stop, 4R | v3 ~+0.136R, testing |
-| `nykz_breakout_prop` | v3 + skip quietest 20% of days (daily ATR) + 3R, for prop accounts | v4 ~+0.163R, DD 19.5R, testing |
+| `nykz_breakout_prop` | v3 rules at 1% risk, for prop accounts | FTMO sim ~52% pass, ~2 months |
 
 ## Setup
 
@@ -57,8 +57,8 @@ python scripts/run_all.py --strategies cssm,orb
 python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01
 python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01 --side ask
 python scripts/run_nykz_breakout.py
-python scripts/run_nykz_breakout.py --config strategy_nykz_breakout_prop.yaml   # v4 prop
-python scripts/prop_sim_nykz_breakout.py   # FTMO 2-step pass rates for v3 and v4 at several risk levels
+python scripts/run_nykz_breakout.py --config strategy_nykz_breakout_prop.yaml   # prop (v3 rules)
+python scripts/prop_sim_nykz_breakout.py   # FTMO 2-step pass rates for the prop config at several risk levels
 python scripts/compare_nykz_breakout.py --grid break   # clean-break / stop placement, 2023-26 + 2018-22
 python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakeven / trailing
 python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close

@@ -1,7 +1,9 @@
-# NY kill-zone breakout v4 (prop firm) — NAS100 M5, real Dukascopy bid/ask spread
-# v4 = v3 (next-candle-confirmed break, 2x ATR stop) + skip the quietest 20% of
-# days by prior-day ATR + 3R target: lower drawdown and shorter losing streaks
-# for prop-firm loss limits. Normal accounts use v3 (strategy_nykz_breakout.yaml).
+# NY kill-zone breakout, prop-firm account — NAS100 M5, real Dukascopy bid/ask spread
+# Same rules as v3 (strategy_nykz_breakout.yaml; a test keeps them identical),
+# risking 1% of the starting balance per trade.
+# FTMO 2-step sim at 1%: ~52% of challenges pass, median ~2 months
+# (python scripts/prop_sim_nykz_breakout.py). v4 (v3 + quiet-day filter + 3R)
+# was dropped: no higher pass rate and about half as fast.
 # Run: python scripts/run_nykz_breakout.py --config strategy_nykz_breakout_prop.yaml
 strategy: nykz_breakout_prop
 
@@ -20,12 +22,13 @@ session:
 signal:
   min_range_bars: 30       # skip days with a patchy range (full range = 36 bars)
   stop_buffer_points: 2.0  # break-candle stop, still used to skip entries that close beyond it
-  take_profit_r: 3.0       # v3: 4R
+  take_profit_r: 4.0
   confirm_close: true
   atr_period: 14
   atr_stop_mult: 2.0
-  min_daily_atr_pctile: 0.2  # skip days whose prior-day ATR(14)/price ranks in the bottom 20%
-  vol_lookback_days: 100     # ... of the previous 100 trading days
+
+risk:
+  risk_per_trade_pct: 1.0  # % of the starting balance per trade (1R)
 
 data:
   start: "2023-01-01"
