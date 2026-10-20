@@ -18,7 +18,7 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
-| `asiakz_ny` | NAS100 Asian range (20:00-00:00 NY = 5:30-9:30 IST summer) traded 08:00-16:55 NY with v3 mechanics (`--grid modes`): continuation -88.2R / -280.9R (2023-26 / 2018-22), fresh break -50.5R / -63.8R, sweep reversal -29.2R / -13.8R. London breaks the Asian range before NY on 98% of days | NO-GO |
+| `asiakz_ny` | NAS100 Asian range (20:00-00:00 NY = 5:30-9:30 IST summer) traded 08:00-16:55 NY with v3 mechanics (`--grid modes`): continuation -88.2R / -280.9R (2023-26 / 2018-22), fresh break -50.5R / -63.8R, sweep reversal -29.2R / -13.8R. London breaks the Asian range before NY on 98% of days. Traded in London instead (`--grid london`: 02:00-05:00 and 03:00-08:00 NY x 3 modes): all six lose on both periods (best 2023-26 sweep reversal 02-05 -21.8R, but -288.2R on 2018-22). Spread is 14-26% of the 2x ATR stop at those hours; even with zero spread the edge is ~+0.05R (2023-26) and <=0 (2018-22) | NO-GO |
 
 ## Active
 

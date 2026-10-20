@@ -21,7 +21,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
 | `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, next-candle confirm, 2x ATR stop, 4R | v3 ~+0.136R, testing |
 | `nykz_breakout_prop` | v3 rules at 1% risk, for prop accounts | FTMO sim ~52% pass, ~2 months |
-| `asiakz_ny` | Asian range (5:30-9:30 IST) traded in the NY session: continuation / fresh / sweep reversal | NO-GO |
+| `asiakz_ny` | Asian range (5:30-9:30 IST) traded in the NY or London session: continuation / fresh / sweep reversal | NO-GO |
 
 ## Setup
 

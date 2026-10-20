@@ -9,6 +9,7 @@
 --grid news:  the config's rules, skipping (or only trading) US high-impact news days.
 --grid vol:   the config's rules, skipping low-volatility days.
 --grid modes: the config's rules with each break_mode (continuation / fresh / sweep reversal).
+--grid london: London entry windows x break modes (for an overnight Asian range).
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -113,6 +114,11 @@ MODE_VARIANTS = [
     ("config rules", "fresh break", {"break_mode": "fresh"}),
     ("config rules", "sweep reversal", {"break_mode": "sweep_reversal"}),
 ]
+LONDON_VARIANTS = [
+    (window, mode_name, {"session": {"entry_start": start, "entry_cutoff": cutoff}, **mode})
+    for window, start, cutoff in (("London KZ 02:00-05:00", "02:00", "05:00"), ("London 03:00-08:00", "03:00", "08:00"))
+    for _, mode_name, mode in MODE_VARIANTS
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -131,6 +137,7 @@ GRIDS = {
     "news": ({}, NEWS_VARIANTS, ("rules", "news days")),
     "vol": ({}, VOL_VARIANTS, ("rules", "volatility filter")),
     "modes": ({}, MODE_VARIANTS, ("rules", "break mode")),
+    "london": ({}, LONDON_VARIANTS, ("entry window (NY)", "break mode")),
 }
 
 
