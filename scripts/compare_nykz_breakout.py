@@ -6,6 +6,7 @@
 --grid rr:    the config's rules with different take-profit targets.
 --grid weekday: the config's rules, skipping one weekday at a time.
 --grid session: the config's rules with earlier entry cutoffs (New York time).
+--grid news:  the config's rules, skipping (or only trading) US high-impact news days.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -92,6 +93,14 @@ SESSION_VARIANTS = [
     ("config rules", f"entries until {hhmm}" + (" (overlap)" if hhmm == "12:00" else ""), {"session": {"entry_cutoff": hhmm}})
     for hhmm in ("10:30", "11:00", "11:30", "12:00", "13:00", "14:00", "15:00", "16:55")
 ]
+NEWS = {"news_calendar": "configs/news_us_high_impact.csv"}
+NEWS_VARIANTS = [
+    ("config rules", "every day", {}),
+    ("config rules", "skip CPI+NFP+FOMC", {**NEWS, "skip_news_events": ["CPI", "NFP", "FOMC"]}),
+    ("config rules", "skip CPI+NFP (8:30)", {**NEWS, "skip_news_events": ["CPI", "NFP"]}),
+    ("config rules", "skip FOMC (14:00)", {**NEWS, "skip_news_events": ["FOMC"]}),
+    ("config rules", "only CPI+NFP+FOMC days", {**NEWS, "skip_news_events": ["CPI", "NFP", "FOMC"], "only_news_days": True}),
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -107,6 +116,7 @@ GRIDS = {
     "rr": ({}, RR_VARIANTS, ("rules", "target")),
     "weekday": ({}, WEEKDAY_VARIANTS, ("rules", "days")),
     "session": ({}, SESSION_VARIANTS, ("rules", "entry window")),
+    "news": ({}, NEWS_VARIANTS, ("rules", "news days")),
 }
 
 

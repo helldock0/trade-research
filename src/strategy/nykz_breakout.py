@@ -2,7 +2,9 @@
 
 Rules (session times are New York local, so US DST is handled):
 - Range = bid high/low of bars opening in [range_start, range_end). NY
-  weekdays listed in skip_weekdays ("Mon".."Fri") are not traded.
+  weekdays listed in skip_weekdays ("Mon".."Fri") are not traded, nor NY
+  days with a news_calendar event listed in skip_news_events (with
+  only_news_days, only those days are traded).
 - The first later bar whose bid close is above the range high (long) or below
   the range low (short) is the break bar. One attempt per NY day.
   Optional "clean break" filters: the close must clear the level by
@@ -41,11 +43,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from src.config import ROOT
 from src.data.bars import ensure_utc_index
 from src.features.sessions import parse_hhmm
 
@@ -116,6 +120,17 @@ def _atr(h: np.ndarray, l: np.ndarray, c: np.ndarray, period: int) -> np.ndarray
     prev = np.concatenate([[c[0]], c[:-1]])
     tr = np.maximum(h - l, np.maximum(np.abs(h - prev), np.abs(l - prev)))
     return pd.Series(tr).rolling(period, min_periods=1).mean().to_numpy()
+
+
+def _news_days(sig: dict[str, Any], tz: str) -> set[str] | None:
+    """NY dates (YYYY-MM-DD) with a skip_news_events event, or None when off."""
+    events = set(sig.get("skip_news_events", []))
+    if not events:
+        return None
+    path = Path(sig["news_calendar"])
+    cal = pd.read_csv(path if path.is_absolute() else ROOT / path)
+    cal = cal[cal["event"].isin(events)]
+    return set(pd.to_datetime(cal["timestamp"], utc=True).dt.tz_convert(tz).dt.strftime("%Y-%m-%d"))
 
 
 def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
@@ -197,6 +212,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     fvg_level = float(sig.get("fvg_limit_level", 0.0))
     fvg_stop = sig.get("stop_ref", "break") == "fvg"
     skip_days = set(sig.get("skip_weekdays", []))
+    news_days = _news_days(sig, sess["timezone"])
+    only_news = bool(sig.get("only_news_days", False))
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
@@ -212,6 +229,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     setups: list[Setup] = []
     for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
         if day.strftime("%a") in skip_days:
+            continue
+        if news_days is not None and (str(day) in news_days) != only_news:
             continue
         rows = rows.to_numpy()
         m = minute[rows]

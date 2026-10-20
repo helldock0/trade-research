@@ -331,3 +331,15 @@ def test_skip_weekdays():
     trade_day = [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5)]
     bars = pd.concat([_day("2024-07-08", trade_day), _day("2024-07-09", trade_day)])  # Mon, Tue
     assert [s.day for s in find_setups(bars, _cfg(skip_weekdays=["Mon"]))] == ["2024-07-09"]
+
+
+def test_skip_and_only_news_days(tmp_path):
+    cal = tmp_path / "news.csv"
+    cal.write_text("timestamp,currency,impact,event\n2024-07-09T12:30:00Z,USD,high,CPI\n2024-07-08T18:00:00Z,USD,high,FOMC\n")
+    trade_day = [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5)]
+    bars = pd.concat([_day("2024-07-08", trade_day), _day("2024-07-09", trade_day)])
+    news = {"news_calendar": str(cal), "skip_news_events": ["CPI"]}
+    assert [s.day for s in find_setups(bars, _cfg(**news))] == ["2024-07-08"]
+    assert [s.day for s in find_setups(bars, _cfg(**news, only_news_days=True))] == ["2024-07-09"]
+    # Every event matching the list counts: the FOMC row is ignored unless listed.
+    assert len(find_setups(bars, _cfg(**{**news, "skip_news_events": ["CPI", "FOMC"]}))) == 0

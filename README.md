@@ -62,6 +62,7 @@ python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entr
 python scripts/compare_nykz_breakout.py --grid rr      # take-profit targets on the config's rules
 python scripts/compare_nykz_breakout.py --grid weekday # skip one weekday at a time
 python scripts/compare_nykz_breakout.py --grid session # earlier entry cutoffs (e.g. London overlap)
+python scripts/compare_nykz_breakout.py --grid news    # skip / only US high-impact news days
 
 # 3) Tests
 python -m pytest -q
