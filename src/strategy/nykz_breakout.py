@@ -98,6 +98,7 @@ class KZTrade:
     exit_price: float
     exit_reason: str
     r_multiple: float
+    mae_r: float = 0.0  # worst open loss while held, in R (capped at the stop unless it gapped)
 
 
 def merge_bid_ask(bid: pd.DataFrame, ask: pd.DataFrame) -> pd.DataFrame:
@@ -413,6 +414,10 @@ def simulate(
         exit_time = bars.index[j]
         busy_until = exit_time + BAR
 
+        r_multiple = s.side * (exit_px - s.entry) / s.risk_points
+        first = s.entry_pos if s.intrabar_fill else s.entry_pos + 1
+        worst = px[2][first : j + 1].min() if s.side > 0 else px[1][first : j + 1].max()
+        mae = s.side * (s.entry - worst) / s.risk_points if j >= first else 0.0
         fields = asdict(s)
         fields.pop("entry_pos")
         fields.pop("intrabar_fill")
@@ -422,7 +427,8 @@ def simulate(
                 exit_time=exit_time,
                 exit_price=exit_px,
                 exit_reason=reason,
-                r_multiple=s.side * (exit_px - s.entry) / s.risk_points,
+                r_multiple=r_multiple,
+                mae_r=max(min(mae, 1.0), -r_multiple, 0.0),
             )
         )
     return trades, skipped
