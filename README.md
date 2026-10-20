@@ -19,7 +19,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
-| `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, next-candle confirm, 4R | v2 ~+0.085R, testing |
+| `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, next-candle confirm, 2x ATR stop, 4R | v3 ~+0.136R, testing |
 
 ## Setup
 

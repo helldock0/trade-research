@@ -152,7 +152,7 @@ def test_config_file_matches_spec():
     assert cfg["strategy"] == "nykz_breakout"
     assert (cfg["symbol"], cfg["timeframe"]) == ("NAS100", "M5")
     assert cfg["session"] == CFG["session"]
-    assert cfg["signal"] == {**CFG["signal"], "confirm_close": True}
+    assert cfg["signal"] == {**CFG["signal"], "confirm_close": True, "atr_period": 14, "atr_stop_mult": 2.0}
 
 
 def test_ask_parquet_path_suffix():
