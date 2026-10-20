@@ -46,6 +46,8 @@ MINORS = [
 
 METALS = ["XAUUSD"]
 
+INDICES = ["NAS100"]
+
 FULL_FX_UNIVERSE = MAJORS + MINORS + METALS
 
 # Canonical bar timeframes exposed by dukascopy-python (MT5-style names).
@@ -85,6 +87,8 @@ SYMBOL_TO_INSTRUMENT_ATTR = {
     "NZDCAD": "INSTRUMENT_FX_CROSSES_NZD_CAD",
     # Metals
     "XAUUSD": "INSTRUMENT_FX_METALS_XAU_USD",
+    # Indices (Nasdaq 100 = Dukascopy USATECH.IDX/USD)
+    "NAS100": "INSTRUMENT_IDX_AMERICA_E_NQ_100",
 }
 
 # Fallback slash notation if instrument attr is missing.
@@ -118,6 +122,7 @@ SYMBOL_TO_SLASH = {
     "NZDCHF": "NZD/CHF",
     "NZDCAD": "NZD/CAD",
     "XAUUSD": "XAU/USD",
+    "NAS100": "E_NQ-100",
 }
 
 INTERVAL_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {
