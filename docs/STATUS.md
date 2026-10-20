@@ -23,7 +23,7 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | Strategy | Notes | Verdict |
 |----------|-------|---------|
-| `nykz_breakout` | NAS100 M5: 07:00-10:00 NY range, body-close break, enter next close, stop beyond break bar +2pt, 4R, hold to SL/TP. 2023-01 → 2026-10 with real bid/ask: 800 trades, WR 19.6%, ~-0.044R (-34.8R, max DD 75.8R). Zero-spread ~+0.010R. Longs ~0R, shorts ~-0.093R | v1 negative after spread |
+| `nykz_breakout` | NAS100 M5: 07:00-10:00 NY range, body-close break, enter next close, stop beyond break bar +2pt, 4R, hold to SL/TP. 2023-01 → 2026-10 with real bid/ask: 800 trades, WR 19.6%, ~-0.044R (-34.8R, max DD 75.8R). Zero-spread ~+0.010R. Longs ~0R, shorts ~-0.093R. Variant sweep (`scripts/compare_nykz_breakout.py`, 5 break rules x 2 stop rules, 2023-26 plus a 2018-22 check): next-candle confirmation +0.085R (2023-26, max DD 30R) / +0.062R (2018-22); close >=0.1% beyond + prior-candle stop +0.053R / +0.189R; body-size filter alone no help. Best pooled t ~2.5 after 10 tries: promising, not proven | v1 negative; confirm variant positive in both periods |
 
 ## Next
 

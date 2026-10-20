@@ -160,3 +160,60 @@ def test_ask_parquet_path_suffix():
 
     assert parquet_path("NAS100", "M5", Path("x")).name == "NAS100_M5.parquet"
     assert parquet_path("NAS100", "M5", Path("x"), side="ask").name == "NAS100_M5_ask.parquet"
+
+
+def _cfg(**signal) -> dict:
+    return {"session": CFG["session"], "signal": {**CFG["signal"], **signal}}
+
+
+def test_min_break_points_ignores_shallow_closes():
+    bars = _day(
+        "2024-07-10",
+        [
+            (100, 103, 100, 101.5),  # closes 0.5 above the high: too shallow
+            (101.5, 102, 100, 100.5),
+            (100.5, 106, 100.5, 105),  # closes 4 above the high
+            (105, 106, 104, 105.5),  # entry bar
+        ],
+    )
+    (s,) = find_setups(bars, _cfg(min_break_points=3))
+    assert s.break_time == pd.Timestamp("2024-07-10 10:10", tz="America/New_York")
+    assert s.stop == 98.5 and s.entry == 106.0
+
+
+def test_min_break_pct_scales_with_price():
+    bars = _day("2024-07-10", [(100, 103, 100, 101.5), (101.5, 102, 101, 101.8)])
+    assert find_setups(bars, _cfg(min_break_pct=1.0)) == []  # needs ~1 point
+    assert len(find_setups(bars, _cfg(min_break_pct=0.1))) == 1  # needs ~0.1 point
+
+
+def test_confirm_close_waits_for_a_confirmed_break():
+    bars = _day(
+        "2024-07-10",
+        [
+            (100, 103, 100, 102),  # break
+            (102, 102, 99.5, 100.5),  # back inside: no confirmation
+            (100.5, 104, 100.5, 103),  # second break
+            (103, 105, 102.5, 104.5),  # confirms: entry at its close
+        ],
+    )
+    assert find_setups(bars, CFG)[0].break_time == pd.Timestamp("2024-07-10 10:00", tz="America/New_York")
+    (s,) = find_setups(bars, _cfg(confirm_close=True))
+    assert s.break_time == pd.Timestamp("2024-07-10 10:10", tz="America/New_York")
+    assert s.entry == 105.0 and s.stop == 98.5
+
+
+def test_min_body_vs_range_needs_a_big_candle():
+    rows = [(99.5, 101, 99, 100.5)] * 36  # range bars: 1-point bodies
+    small = (101.0, 101.6, 100.9, 101.2)  # body 0.2, closes above 101
+    big = (101.2, 104, 101.2, 103.5)  # body 2.3
+    bars = _bars("2024-07-10", rows + [small, (101.2, 101.4, 101, 101.3), big, (103.5, 104, 103, 103.8)])
+    (s,) = find_setups(bars, _cfg(min_body_vs_range=1.5))
+    assert s.break_time == pd.Timestamp("2024-07-10 10:10", tz="America/New_York")
+
+
+def test_stop_includes_prior_bar():
+    bars = _day("2024-07-10", [(100, 100.5, 94, 99.5), (99.5, 100, 97, 98), (98, 98.5, 97.5, 98)])
+    # Break bar is 10:05 (close 98 < 99); prior bar's high 100.5 beats the break bar's 100.
+    assert find_setups(bars, CFG)[0].stop == 102.0
+    assert find_setups(bars, _cfg(stop_includes_prior_bar=True))[0].stop == 102.5

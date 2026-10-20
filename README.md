@@ -56,6 +56,7 @@ python scripts/run_all.py --strategies cssm,orb
 python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01
 python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01 --side ask
 python scripts/run_nykz_breakout.py
+python scripts/compare_nykz_breakout.py   # clean-break / stop variants, 2023-26 + 2018-22
 
 # 3) Tests
 python -m pytest -q

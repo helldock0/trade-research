@@ -4,9 +4,15 @@ Rules (session times are New York local, so US DST is handled):
 - Range = bid high/low of bars opening in [range_start, range_end).
 - The first later bar whose bid close is above the range high (long) or below
   the range low (short) is the break bar. One attempt per NY day.
+  Optional "clean break" filters: the close must clear the level by
+  min_break_points / min_break_pct of price, and the body must be at least
+  min_body_vs_range x the average range-bar body. With confirm_close, the
+  next bar must also close outside the range, else the scan waits for the
+  next break.
 - Entry at the close of the next bar: longs buy the ask, shorts sell the bid.
   That bar must close no later than entry_cutoff.
-- Stop = break bar low - buffer (long) / high + buffer (short). The day is
+- Stop = break bar low - buffer (long) / high + buffer (short); with
+  stop_includes_prior_bar, the bar before the break counts too. The day is
   skipped when the entry bar's bid close is at or beyond the stop.
 - Target = entry +/- take_profit_r * |entry - stop|, measured from the fill.
 - Held until stop or target (overnight and over weekends). One trade at a
@@ -87,6 +93,17 @@ def _minutes(hhmm: str) -> int:
     return t.hour * 60 + t.minute
 
 
+def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
+    """+1 / -1 when a bar closes cleanly above / below the range, else 0."""
+    if abs(c - o) < body_floor:
+        return 0
+    if c > rh + need:
+        return 1
+    if c < rl - need:
+        return -1
+    return 0
+
+
 def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     """One candidate trade per NY day (first break only), in time order."""
     sess = cfg["session"]
@@ -97,9 +114,15 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     min_bars = int(sig.get("min_range_bars", 1))
     buffer = float(sig["stop_buffer_points"])
     tp_r = float(sig["take_profit_r"])
+    min_pts = float(sig.get("min_break_points", 0.0))
+    min_frac = float(sig.get("min_break_pct", 0.0)) / 100
+    min_body = float(sig.get("min_body_vs_range", 0.0))
+    confirm = bool(sig.get("confirm_close", False))
+    stop_prior = bool(sig.get("stop_includes_prior_bar", False))
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
+    op = bars["open"].to_numpy()
     hi = bars["high"].to_numpy()
     lo = bars["low"].to_numpy()
     cl = bars["close"].to_numpy()
@@ -113,44 +136,49 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
         if len(rng) < min_bars:
             continue
         rh, rl = float(hi[rng].max()), float(lo[rng].min())
+        body_floor = min_body * float(np.abs(cl[rng] - op[rng]).mean())
 
         scan = rows[m >= range_end]
-        brk = next((k for k, p in enumerate(scan) if cl[p] > rh or cl[p] < rl), None)
-        if brk is None or brk + 1 >= len(scan):
-            continue
-        b, e = scan[brk], scan[brk + 1]
-        if minute[e] + BAR_MINUTES > cutoff:
-            continue
-
-        side = 1 if cl[b] > rh else -1
-        if side > 0:
-            stop = float(lo[b]) - buffer
-            if cl[e] <= stop:
+        for k in range(len(scan) - 1):
+            b, e = scan[k], scan[k + 1]
+            side = _break_side(op[b], cl[b], rh, rl, max(min_pts, min_frac * cl[b]), body_floor)
+            if side == 0:
                 continue
-            entry = float(ask_cl[e])
-        else:
-            stop = float(hi[b]) + buffer
-            if cl[e] >= stop:
-                continue
-            entry = float(cl[e])
-        risk = abs(entry - stop)
+            if confirm and not (cl[e] > rh if side > 0 else cl[e] < rl):
+                continue  # failed confirmation: wait for the next break
+            if minute[e] + BAR_MINUTES > cutoff:
+                break
 
-        setups.append(
-            Setup(
-                day=str(day),
-                side=side,
-                range_high=rh,
-                range_low=rl,
-                break_time=bars.index[b],
-                entry_time=bars.index[e] + BAR,
-                entry_pos=int(e),
-                entry=entry,
-                stop=stop,
-                take_profit=entry + side * tp_r * risk,
-                risk_points=risk,
-                spread_points=float(ask_cl[e] - cl[e]),
+            ref = [b - 1, b] if stop_prior else [b]
+            if side > 0:
+                stop = float(lo[ref].min()) - buffer
+                if cl[e] <= stop:
+                    break
+                entry = float(ask_cl[e])
+            else:
+                stop = float(hi[ref].max()) + buffer
+                if cl[e] >= stop:
+                    break
+                entry = float(cl[e])
+            risk = abs(entry - stop)
+
+            setups.append(
+                Setup(
+                    day=str(day),
+                    side=side,
+                    range_high=rh,
+                    range_low=rl,
+                    break_time=bars.index[b],
+                    entry_time=bars.index[e] + BAR,
+                    entry_pos=int(e),
+                    entry=entry,
+                    stop=stop,
+                    take_profit=entry + side * tp_r * risk,
+                    risk_points=risk,
+                    spread_points=float(ask_cl[e] - cl[e]),
+                )
             )
-        )
+            break
     return setups
 
 
