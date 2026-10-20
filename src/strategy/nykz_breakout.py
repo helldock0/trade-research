@@ -469,6 +469,33 @@ def simulate(
     return trades, skipped
 
 
+def run_portfolio(
+    markets: dict[str, tuple[pd.DataFrame, dict[str, Any]]],
+) -> tuple[list[tuple[str, KZTrade]], int]:
+    """One trade at a time across several markets, each with its own bars and config.
+
+    Setups are taken in entry-time order; on a tie the market listed first
+    wins. Returns ((symbol, trade) pairs, setups skipped while a trade was open).
+    """
+    queue = []
+    for rank, (sym, (bars, cfg)) in enumerate(markets.items()):
+        queue += [(s.entry_time, rank, sym, s) for s in find_setups(bars, cfg)]
+    queue.sort(key=lambda q: (q[0], q[1]))
+
+    out: list[tuple[str, KZTrade]] = []
+    busy_until: pd.Timestamp | None = None
+    skipped = 0
+    for _, _, sym, s in queue:
+        if busy_until is not None and s.entry_time < busy_until:
+            skipped += 1
+            continue
+        bars, cfg = markets[sym]
+        (trade,), _ = simulate(bars, [s], cfg["signal"])
+        out.append((sym, trade))
+        busy_until = trade.exit_time + BAR
+    return out, skipped
+
+
 def _stats(r: np.ndarray) -> dict[str, Any]:
     return {
         "n_trades": int(len(r)),

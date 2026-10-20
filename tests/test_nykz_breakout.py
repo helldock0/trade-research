@@ -426,3 +426,17 @@ def test_asia_config_matches_v3_mechanics():
     assert asia["session"]["range_start"] == "20:00" and asia["session"]["entry_start"] == "08:00"
     for k in ("take_profit_r", "confirm_close", "atr_stop_mult", "atr_period", "stop_buffer_points"):
         assert asia["signal"][k] == v3["signal"][k]
+
+
+def test_portfolio_takes_one_trade_at_a_time_first_market_wins_ties():
+    from src.strategy.nykz_breakout import run_portfolio
+
+    trade_day = [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5), (103.5, 105, 103, 104)]  # stays open
+    late_break = [FLAT] * 6 + trade_day  # breaks 30 minutes later
+    a = pd.concat([_day("2024-07-10", trade_day), _day("2024-07-11", [FLAT] * 12)])  # A's data runs past B's entry
+    b = pd.concat([_day("2024-07-10", trade_day), _day("2024-07-11", late_break)])
+    trades, skipped = run_portfolio({"A": (a, CFG), "B": (b, CFG)})
+    # Jul 10: both break at once, A wins and stays open to the end, so B's Jul 11 setup is skipped too.
+    assert [sym for sym, _ in trades] == ["A"] and skipped == 2
+    trades, _ = run_portfolio({"B": (b, CFG), "A": (a, CFG)})
+    assert [sym for sym, _ in trades] == ["B"]
