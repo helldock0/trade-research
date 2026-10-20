@@ -63,6 +63,7 @@ python scripts/compare_nykz_breakout.py --grid rr      # take-profit targets on 
 python scripts/compare_nykz_breakout.py --grid weekday # skip one weekday at a time
 python scripts/compare_nykz_breakout.py --grid session # earlier entry cutoffs (e.g. London overlap)
 python scripts/compare_nykz_breakout.py --grid news    # skip / only US high-impact news days
+python scripts/compare_nykz_breakout.py --grid vol     # skip low-volatility days (daily ATR / kill-zone range)
 
 # 3) Tests
 python -m pytest -q

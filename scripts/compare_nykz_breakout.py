@@ -7,6 +7,7 @@
 --grid weekday: the config's rules, skipping one weekday at a time.
 --grid session: the config's rules with earlier entry cutoffs (New York time).
 --grid news:  the config's rules, skipping (or only trading) US high-impact news days.
+--grid vol:   the config's rules, skipping low-volatility days.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -101,6 +102,11 @@ NEWS_VARIANTS = [
     ("config rules", "skip FOMC (14:00)", {**NEWS, "skip_news_events": ["FOMC"]}),
     ("config rules", "only CPI+NFP+FOMC days", {**NEWS, "skip_news_events": ["CPI", "NFP", "FOMC"], "only_news_days": True}),
 ]
+VOL_VARIANTS = [("config rules", "every day", {})] + [
+    ("config rules", f"skip {name} bottom {int(q * 100)}%", {key: q})
+    for name, key in (("daily ATR", "min_daily_atr_pctile"), ("KZ range", "min_range_pctile"))
+    for q in (0.2, 0.33)
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -117,6 +123,7 @@ GRIDS = {
     "weekday": ({}, WEEKDAY_VARIANTS, ("rules", "days")),
     "session": ({}, SESSION_VARIANTS, ("rules", "entry window")),
     "news": ({}, NEWS_VARIANTS, ("rules", "news days")),
+    "vol": ({}, VOL_VARIANTS, ("rules", "volatility filter")),
 }
 
 
@@ -144,9 +151,11 @@ def main(argv: list[str] | None = None) -> None:
         load_parquet(parquet_path(sym, tf, cache, side="bid")),
         load_parquet(parquet_path(sym, tf, cache, side="ask")),
     )
+    # Each period loads a year of earlier bars to warm up the filters; trading starts at trade_from.
+    start = cfg["data"]["start"]
     periods = {
-        "test": _slice(bars, cfg["data"]["start"], cfg["data"].get("end")),
-        "check": _slice(bars, args.check_start, args.check_end),
+        "test": (_slice(bars, str(pd.Timestamp(start) - pd.Timedelta(days=365))[:10], cfg["data"].get("end")), start),
+        "check": (_slice(bars, args.check_start, args.check_end), args.check_start),
     }
 
     base, variants, (label_a, label_b) = GRIDS[args.grid]
@@ -156,8 +165,8 @@ def main(argv: list[str] | None = None) -> None:
         session = {**cfg["session"], **extra.pop("session", {})}
         variant = {**cfg, "session": session, "signal": {**cfg["signal"], **base, **extra}}
         row: dict = {"a": name_a, "b": name_b}
-        for period, period_bars in periods.items():
-            trades, s = run(period_bars, variant)
+        for period, (period_bars, trade_from) in periods.items():
+            trades, s = run(period_bars, {**variant, "signal": {**variant["signal"], "trade_from": trade_from}})
             row[period] = {
                 k: s.get(k, 0.0)
                 for k in ("n_trades", "win_rate", "expectancy_r", "total_r", "max_dd_r", "by_year")

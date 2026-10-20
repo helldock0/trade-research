@@ -4,7 +4,11 @@ Rules (session times are New York local, so US DST is handled):
 - Range = bid high/low of bars opening in [range_start, range_end). NY
   weekdays listed in skip_weekdays ("Mon".."Fri") are not traded, nor NY
   days with a news_calendar event listed in skip_news_events (with
-  only_news_days, only those days are traded).
+  only_news_days, only those days are traded). Volatility filters skip days
+  whose prior-day ATR(14)/price (min_daily_atr_pctile) or kill-zone range
+  width (min_range_pctile) ranks below that share of the previous
+  vol_lookback_days. No day before trade_from is traded (earlier bars only
+  warm the filters up).
 - The first later bar whose bid close is above the range high (long) or below
   the range low (short) is the break bar. One attempt per NY day.
   Optional "clean break" filters: the close must clear the level by
@@ -133,6 +137,28 @@ def _news_days(sig: dict[str, Any], tz: str) -> set[str] | None:
     return set(pd.to_datetime(cal["timestamp"], utc=True).dt.tz_convert(tz).dt.strftime("%Y-%m-%d"))
 
 
+def _rank(past: np.ndarray, x: float) -> float:
+    """Share of `past` below x, ties counting half."""
+    return float(np.mean(past < x) + 0.5 * np.mean(past == x))
+
+
+def _pctile_vs_past(values: pd.Series, lookback: int) -> pd.Series:
+    """Rank of each value among the previous `lookback` values (NaN until 20 exist)."""
+    return values.rolling(lookback + 1, min_periods=21).apply(lambda w: _rank(w[:-1], w[-1]), raw=True)
+
+
+def _daily_atr_rank(bars: pd.DataFrame, local: pd.DatetimeIndex, lookback: int) -> dict[Any, float]:
+    """NY date -> rank of the previous day's ATR(14)/close among the past `lookback` days."""
+    weekday = local.dayofweek < 5
+    d = bars.loc[weekday, ["high", "low", "close"]].groupby(local.date[weekday]).agg(
+        {"high": "max", "low": "min", "close": "last"}
+    )
+    prev_c = d["close"].shift(1)
+    tr = pd.concat([d["high"] - d["low"], (d["high"] - prev_c).abs(), (d["low"] - prev_c).abs()], axis=1).max(axis=1)
+    atr_pct = (tr.rolling(14).mean() / d["close"]).shift(1)
+    return _pctile_vs_past(atr_pct, lookback).to_dict()
+
+
 def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
     """+1 / -1 when a bar closes cleanly above / below the range, else 0."""
     if abs(c - o) < body_floor:
@@ -214,6 +240,10 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     skip_days = set(sig.get("skip_weekdays", []))
     news_days = _news_days(sig, sess["timezone"])
     only_news = bool(sig.get("only_news_days", False))
+    trade_from = sig.get("trade_from")
+    vol_lookback = int(sig.get("vol_lookback_days", 100))
+    min_atr_rank = float(sig.get("min_daily_atr_pctile", 0.0))
+    min_range_rank = float(sig.get("min_range_pctile", 0.0))
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
@@ -225,6 +255,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     ask_lo = bars["ask_low"].to_numpy()
     ask_cl = bars["ask_close"].to_numpy()
     atr = _atr(hi, lo, cl, int(sig.get("atr_period", 14)))
+    atr_rank = _daily_atr_rank(bars, local, vol_lookback) if min_atr_rank > 0 else {}
+    widths: list[float] = []  # past kill-zone range widths / price
 
     setups: list[Setup] = []
     for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
@@ -238,6 +270,14 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
         if len(rng) < min_bars:
             continue
         rh, rl = float(hi[rng].max()), float(lo[rng].min())
+        widths.append((rh - rl) / rl)
+        past = widths[-vol_lookback - 1 : -1]
+        if min_range_rank > 0 and len(past) >= 20 and _rank(np.array(past), widths[-1]) < min_range_rank:
+            continue
+        if atr_rank.get(day, 1.0) < min_atr_rank:  # NaN (no history yet) never skips
+            continue
+        if trade_from and str(day) < trade_from:
+            continue
         body_floor = min_body * float(np.abs(cl[rng] - op[rng]).mean())
 
         scan = rows[m >= range_end]

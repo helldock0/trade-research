@@ -343,3 +343,17 @@ def test_skip_and_only_news_days(tmp_path):
     assert [s.day for s in find_setups(bars, _cfg(**news, only_news_days=True))] == ["2024-07-09"]
     # Every event matching the list counts: the FOMC row is ignored unless listed.
     assert len(find_setups(bars, _cfg(**{**news, "skip_news_events": ["CPI", "FOMC"]}))) == 0
+
+
+def test_min_range_pctile_skips_quiet_ranges_and_trade_from():
+    trade_day = [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5), (103.5, 104, 103, 103.5)]
+    wide = [(100, 101, 99, 100)] * 36  # range width 2
+    quiet = [(100, 100.5, 99.5, 100)] * 36  # range width 1
+    days = pd.bdate_range("2024-06-03", periods=22).strftime("%Y-%m-%d")
+    bars = pd.concat([_bars(d, (quiet if d == days[-1] else wide) + trade_day) for d in days])
+    no_trades_busy = {"take_profit_r": 0.5, "stop_buffer_points": 50.0}  # every trade closes the same day
+    every = find_setups(bars, _cfg(**no_trades_busy))
+    assert len(every) == 22
+    kept = find_setups(bars, _cfg(**no_trades_busy, min_range_pctile=0.2))
+    assert [s.day for s in kept] == list(days[:-1])  # the quiet last day ranks below all 21 before it
+    assert [s.day for s in find_setups(bars, _cfg(trade_from=days[-2]))] == list(days[-2:])
