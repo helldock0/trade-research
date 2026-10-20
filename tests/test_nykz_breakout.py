@@ -325,3 +325,9 @@ def test_fvg_limit_fill_bar_that_reaches_the_stop_is_a_loss():
     assert (t.exit_reason, t.exit_price) == ("stop", 97.0)
     assert t.r_multiple == pytest.approx(-1.0)
     assert t.exit_time == pd.Timestamp("2024-07-10 10:15", tz="America/New_York")
+
+
+def test_skip_weekdays():
+    trade_day = [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5)]
+    bars = pd.concat([_day("2024-07-08", trade_day), _day("2024-07-09", trade_day)])  # Mon, Tue
+    assert [s.day for s in find_setups(bars, _cfg(skip_weekdays=["Mon"]))] == ["2024-07-09"]

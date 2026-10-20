@@ -1,7 +1,8 @@
 """NY kill-zone breakout — NAS100 M5 with real bid/ask fills.
 
 Rules (session times are New York local, so US DST is handled):
-- Range = bid high/low of bars opening in [range_start, range_end).
+- Range = bid high/low of bars opening in [range_start, range_end). NY
+  weekdays listed in skip_weekdays ("Mon".."Fri") are not traded.
 - The first later bar whose bid close is above the range high (long) or below
   the range low (short) is the break bar. One attempt per NY day.
   Optional "clean break" filters: the close must clear the level by
@@ -195,6 +196,7 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     entry_mode = sig.get("entry_mode", "next_close")
     fvg_level = float(sig.get("fvg_limit_level", 0.0))
     fvg_stop = sig.get("stop_ref", "break") == "fvg"
+    skip_days = set(sig.get("skip_weekdays", []))
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
@@ -209,6 +211,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
 
     setups: list[Setup] = []
     for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
+        if day.strftime("%a") in skip_days:
+            continue
         rows = rows.to_numpy()
         m = minute[rows]
         rng = rows[(m >= range_start) & (m < range_end)]

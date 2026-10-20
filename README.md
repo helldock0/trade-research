@@ -60,6 +60,7 @@ python scripts/compare_nykz_breakout.py --grid break   # clean-break / stop plac
 python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakeven / trailing
 python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close
 python scripts/compare_nykz_breakout.py --grid rr      # take-profit targets on the config's rules
+python scripts/compare_nykz_breakout.py --grid weekday # skip one weekday at a time
 
 # 3) Tests
 python -m pytest -q

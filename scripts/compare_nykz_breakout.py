@@ -4,6 +4,7 @@
 --grid exit:  stop size x trailing, on the config's entry rule.
 --grid fvg:   next-close vs FVG retest-and-confirm and FVG limit entries, with v2 and ATR stops.
 --grid rr:    the config's rules with different take-profit targets.
+--grid weekday: the config's rules, skipping one weekday at a time.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -83,6 +84,9 @@ FVG_VARIANTS = [
 ]
 
 
+WEEKDAY_VARIANTS = [("config rules", "every day", {})] + [
+    ("config rules", f"skip {d}", {"skip_weekdays": [d]}) for d in ("Mon", "Tue", "Wed", "Thu", "Fri")
+]
 RR_VARIANTS = [("config rules", f"{r:g}R target", {"take_profit_r": r}) for r in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)]
 
 
@@ -96,6 +100,7 @@ GRIDS = {
     "exit": ({**PLAIN_ENTRY, **FIXED_EXITS}, _product(STOP_SIZES, TRAILS), ("stop", "trail")),
     "fvg": ({**PLAIN_ENTRY, **FIXED_EXITS}, FVG_VARIANTS, ("entry", "stop")),
     "rr": ({}, RR_VARIANTS, ("rules", "target")),
+    "weekday": ({}, WEEKDAY_VARIANTS, ("rules", "days")),
 }
 
 
