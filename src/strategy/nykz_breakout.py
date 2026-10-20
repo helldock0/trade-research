@@ -10,9 +10,14 @@ Rules (session times are New York local, so US DST is handled):
   next bar must also close outside the range, else the scan waits for the
   next break.
 - Entry at the close of the next bar: longs buy the ask, shorts sell the bid.
-  That bar must close no later than entry_cutoff.
+  That bar must close no later than entry_cutoff. With entry_mode
+  "fvg_retest", the entry waits instead for the first fair value gap in the
+  break direction (3 bars, the middle one at or after the break bar): price
+  must trade back into the gap and then close back out of it on the trade
+  side; a close through the far side of the gap cancels the day.
 - Stop = break bar low - buffer (long) / high + buffer (short); with
-  stop_includes_prior_bar, the bar before the break counts too. The day is
+  stop_includes_prior_bar, the bar before the break counts too; with
+  stop_ref "fvg" (fvg_retest only), the gap's first bar is used. The day is
   skipped when the entry bar's bid close is at or beyond the stop.
   atr_stop_mult replaces that stop with entry -/+ mult x ATR (M5, at entry);
   min_stop_atr only widens a stop closer than that many ATRs.
@@ -118,6 +123,30 @@ def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floo
     return 0
 
 
+def _fvg_retest(
+    side: int, start: int, last: int, hi: np.ndarray, lo: np.ndarray, cl: np.ndarray
+) -> tuple[int, int] | None:
+    """(gap's first bar, entry bar) for the first FVG whose middle bar is at or
+    after `start`, once price retests it and closes back out on the trade side."""
+    for p in range(start, last):
+        c1, c3 = p - 1, p + 1
+        if side > 0 and hi[c1] < lo[c3]:
+            near, far = lo[c3], hi[c1]
+        elif side < 0 and lo[c1] > hi[c3]:
+            near, far = hi[c3], lo[c1]
+        else:
+            continue
+        touched = False
+        for t in range(c3 + 1, last + 1):
+            if side * (cl[t] - far) < 0:
+                return None  # closed through the gap
+            touched = touched or (lo[t] <= near if side > 0 else hi[t] >= near)
+            if touched and side * (cl[t] - near) > 0:
+                return c1, t
+        return None
+    return None
+
+
 def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     """One candidate trade per NY day (first break only), in time order."""
     sess = cfg["session"]
@@ -135,6 +164,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     stop_prior = bool(sig.get("stop_includes_prior_bar", False))
     atr_stop = float(sig.get("atr_stop_mult", 0.0))
     min_stop_atr = float(sig.get("min_stop_atr", 0.0))
+    fvg = sig.get("entry_mode", "next_close") == "fvg_retest"
+    fvg_stop = sig.get("stop_ref", "break") == "fvg"
 
     local = bars.index.tz_convert(sess["timezone"])
     minute = np.asarray(local.hour * 60 + local.minute)
@@ -165,8 +196,15 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
                 continue  # failed confirmation: wait for the next break
             if minute[e] + BAR_MINUTES > cutoff:
                 break
+            if fvg:
+                found = _fvg_retest(side, b, scan[-1], hi, lo, cl)
+                if found is None:
+                    break
+                c1, e = found
+                if minute[e] + BAR_MINUTES > cutoff:
+                    break
 
-            ref = [b - 1, b] if stop_prior else [b]
+            ref = [c1] if fvg and fvg_stop else [b - 1, b] if stop_prior else [b]
             if side > 0:
                 stop = float(lo[ref].min()) - buffer
                 if cl[e] <= stop:

@@ -257,3 +257,44 @@ def test_atr_trail_without_target_applies_from_next_bar():
     assert t.take_profit is None
     assert (t.exit_reason, t.exit_price) == ("trail", 110.0)
     assert t.r_multiple == pytest.approx((110 - 102.5) / 4.5)
+
+
+# Break bar + confirming bar. The last range bar (high 101) and the confirming
+# bar (low 101.8) leave a bullish FVG of 101-101.8 around the break bar.
+FVG_BREAK = [(100, 103, 100, 102), (102, 104, 101.8, 103.5), (103.5, 104, 102.5, 103)]
+FVG_CFG = {"confirm_close": True, "entry_mode": "fvg_retest"}
+
+
+def test_fvg_retest_enters_on_close_back_out_of_the_gap():
+    bars = _day("2024-07-10", FVG_BREAK + [(103, 103.2, 101.5, 102.4)])  # dips to 101.5, closes 102.4
+    (s,) = find_setups(bars, _cfg(**FVG_CFG))
+    assert s.entry_time == pd.Timestamp("2024-07-10 10:20", tz="America/New_York")
+    assert s.entry == pytest.approx(102.9)  # ask close of the retest bar
+    assert s.stop == 98.0  # break bar low - 2
+    (s,) = find_setups(bars, _cfg(**FVG_CFG, stop_ref="fvg"))
+    assert s.stop == 97.0  # gap's first bar (last range bar) low - 2
+
+
+def test_fvg_retest_waits_for_the_confirming_close():
+    bars = _day("2024-07-10", FVG_BREAK + [(103, 103.2, 101.2, 101.5), (101.5, 102.5, 101.4, 102.2)])
+    (s,) = find_setups(bars, _cfg(**FVG_CFG))
+    assert s.entry_time == pd.Timestamp("2024-07-10 10:25", tz="America/New_York")
+
+
+def test_fvg_close_through_the_gap_cancels_the_day():
+    bars = _day("2024-07-10", FVG_BREAK + [(103, 103.2, 100.2, 100.5), (100.5, 102.5, 100.4, 102.2)])
+    assert find_setups(bars, _cfg(**FVG_CFG)) == []
+
+
+def test_fvg_retest_short():
+    bars = _day(
+        "2024-07-10",
+        [
+            (100, 100, 97, 98),  # break below 99
+            (98, 98.2, 96, 96.5),  # confirms; low-of-range-bar 99 > this high 98.2: gap 98.2-99
+            (96.5, 97, 95, 96),
+            (96, 98.6, 95.8, 97.5),  # back into the gap, closes back below 98.2
+        ],
+    )
+    (s,) = find_setups(bars, _cfg(**FVG_CFG))
+    assert (s.side, s.entry, s.stop) == (-1, 97.5, 102.0)

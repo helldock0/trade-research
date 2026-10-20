@@ -2,6 +2,7 @@
 
 --grid break: clean-break rules x stop placement, each from plain v1 rules.
 --grid exit:  stop size x trailing, on the config's entry rule.
+--grid fvg:   next-close vs FVG retest-and-confirm entries, with v2 and ATR stops.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -42,6 +43,7 @@ STOP_RULES = [
     ("break candle", {}),
     ("break + prior candle", {"stop_includes_prior_bar": True}),
 ]
+PLAIN_ENTRY = {"entry_mode": "next_close", "stop_ref": "break"}
 FIXED_EXITS = {
     "atr_stop_mult": 0.0,
     "min_stop_atr": 0.0,
@@ -63,10 +65,24 @@ TRAILS = [
     ("trail 2x ATR, 4R target", {"trail_atr_mult": 2.0}),
     ("trail 2x ATR, no target", {"trail_atr_mult": 2.0, "take_profit_r": 0.0}),
 ]
+FVG_VARIANTS = [
+    ("next close (v2)", "break candle", {}),
+    ("next close (v2)", "2x ATR", {"atr_stop_mult": 2.0}),
+    ("FVG retest", "break candle", {"entry_mode": "fvg_retest"}),
+    ("FVG retest", "FVG candle 1", {"entry_mode": "fvg_retest", "stop_ref": "fvg"}),
+    ("FVG retest", "2x ATR", {"entry_mode": "fvg_retest", "atr_stop_mult": 2.0}),
+]
+
+
+def _product(rules_a: list, rules_b: list) -> list:
+    return [(a, b, {**cfg_a, **cfg_b}) for a, cfg_a in rules_a for b, cfg_b in rules_b]
+
+
 GRIDS = {
-    # name: (settings every variant starts from, first rules, second rules, column labels)
-    "break": ({**V1_RULES, **FIXED_EXITS}, BREAK_RULES, STOP_RULES, ("break rule", "stop")),
-    "exit": (FIXED_EXITS, STOP_SIZES, TRAILS, ("stop", "trail")),
+    # name: (settings every variant starts from, variants, column labels)
+    "break": ({**PLAIN_ENTRY, **V1_RULES, **FIXED_EXITS}, _product(BREAK_RULES, STOP_RULES), ("break rule", "stop")),
+    "exit": ({**PLAIN_ENTRY, **FIXED_EXITS}, _product(STOP_SIZES, TRAILS), ("stop", "trail")),
+    "fvg": ({**PLAIN_ENTRY, **FIXED_EXITS}, FVG_VARIANTS, ("entry", "stop")),
 }
 
 
@@ -99,25 +115,24 @@ def main(argv: list[str] | None = None) -> None:
         "check": _slice(bars, args.check_start, args.check_end),
     }
 
-    base, rules_a, rules_b, (label_a, label_b) = GRIDS[args.grid]
+    base, variants, (label_a, label_b) = GRIDS[args.grid]
     rows = []
-    for name_a, cfg_a in rules_a:
-        for name_b, cfg_b in rules_b:
-            variant = {**cfg, "signal": {**cfg["signal"], **base, **cfg_a, **cfg_b}}
-            row: dict = {"a": name_a, "b": name_b}
-            for period, period_bars in periods.items():
-                trades, s = run(period_bars, variant)
-                row[period] = {
-                    k: s.get(k, 0.0)
-                    for k in ("n_trades", "win_rate", "expectancy_r", "total_r", "max_dd_r", "by_year")
-                }
-                if args.day and period == "test":
-                    row["day"] = next(
-                        ({"side": t.side, "entry": t.entry, "stop": t.stop, "r": t.r_multiple}
-                         for t in trades if t.day == args.day),
-                        None,
-                    )
-            rows.append(row)
+    for name_a, name_b, extra in variants:
+        variant = {**cfg, "signal": {**cfg["signal"], **base, **extra}}
+        row: dict = {"a": name_a, "b": name_b}
+        for period, period_bars in periods.items():
+            trades, s = run(period_bars, variant)
+            row[period] = {
+                k: s.get(k, 0.0)
+                for k in ("n_trades", "win_rate", "expectancy_r", "total_r", "max_dd_r", "by_year")
+            }
+            if args.day and period == "test":
+                row["day"] = next(
+                    ({"side": t.side, "entry": t.entry, "stop": t.stop, "r": t.r_multiple}
+                     for t in trades if t.day == args.day),
+                    None,
+                )
+        rows.append(row)
 
     out = PROJECT_ROOT / "reports" / f"compare_{cfg['strategy']}_{args.grid}.json"
     out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
