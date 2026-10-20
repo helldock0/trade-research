@@ -21,7 +21,9 @@ Detailed run artifacts stay in `reports/` (local only).
 
 ## Active
 
-None. All current lines are NO-GO.
+| Strategy | Notes | Verdict |
+|----------|-------|---------|
+| `nykz_breakout` | NAS100 M5: 07:00-10:00 NY range, body-close break, enter next close, stop beyond break bar +2pt, 4R, hold to SL/TP. 2023-01 → 2026-10 with real bid/ask: 800 trades, WR 19.6%, ~-0.044R (-34.8R, max DD 75.8R). Zero-spread ~+0.010R. Longs ~0R, shorts ~-0.093R | v1 negative after spread |
 
 ## Next
 

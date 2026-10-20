@@ -19,6 +19,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, 4R | v1 negative |
 
 ## Setup
 
@@ -50,6 +51,11 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
 python scripts/run_all.py --strategies cssm,orb
+
+# 2b) NAS100 NY kill-zone breakout (standalone: bid/ask fills)
+python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01
+python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01 --side ask
+python scripts/run_nykz_breakout.py
 
 # 3) Tests
 python -m pytest -q
