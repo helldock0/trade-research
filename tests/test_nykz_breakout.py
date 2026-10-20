@@ -357,3 +357,18 @@ def test_min_range_pctile_skips_quiet_ranges_and_trade_from():
     kept = find_setups(bars, _cfg(**no_trades_busy, min_range_pctile=0.2))
     assert [s.day for s in kept] == list(days[:-1])  # the quiet last day ranks below all 21 before it
     assert [s.day for s in find_setups(bars, _cfg(trade_from=days[-2]))] == list(days[-2:])
+
+
+def test_prop_config_is_v3_plus_quiet_day_filter_and_3r():
+    from src.config import load_strategy_config
+
+    v3 = load_strategy_config("strategy_nykz_breakout.yaml")
+    prop = load_strategy_config("strategy_nykz_breakout_prop.yaml")
+    assert prop["strategy"] == "nykz_breakout_prop"
+    assert prop["session"] == v3["session"]
+    assert prop["signal"] == {
+        **v3["signal"],
+        "take_profit_r": 3.0,
+        "min_daily_atr_pctile": 0.2,
+        "vol_lookback_days": 100,
+    }

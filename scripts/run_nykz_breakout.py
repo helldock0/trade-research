@@ -41,9 +41,11 @@ def main(argv: list[str] | None = None) -> None:
 
     start = args.start or cfg["data"]["start"]
     end = args.end or cfg["data"].get("end")
-    bars = bars.loc[pd.Timestamp(start, tz="UTC") :]
+    # A year of earlier bars warms up the volatility filters; trading starts at `start`.
+    bars = bars.loc[pd.Timestamp(start, tz="UTC") - pd.Timedelta(days=365) :]
     if end:
         bars = bars.loc[: pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)]
+    cfg = {**cfg, "signal": {**cfg["signal"], "trade_from": start}}
 
     trades, summary = run(bars, cfg)
     _, baseline = run(without_spread(bars), cfg)
@@ -53,7 +55,7 @@ def main(argv: list[str] | None = None) -> None:
         "strategy": sid,
         "config": args.config,
         "symbol": sym,
-        "data_from": str(bars.index[0]),
+        "data_from": start,
         "data_to": str(bars.index[-1]),
         "metrics": summary,
         "zero_spread": {
