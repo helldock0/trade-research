@@ -2,7 +2,7 @@
 
 --grid break: clean-break rules x stop placement, each from plain v1 rules.
 --grid exit:  stop size x trailing, on the config's entry rule.
---grid fvg:   next-close vs FVG retest-and-confirm entries, with v2 and ATR stops.
+--grid fvg:   next-close vs FVG retest-and-confirm and FVG limit entries, with v2 and ATR stops.
 
 Each variant runs on the config's test period and on an earlier check period
 (2018-2022 by default), with the real bid/ask spread.
@@ -71,6 +71,14 @@ FVG_VARIANTS = [
     ("FVG retest", "break candle", {"entry_mode": "fvg_retest"}),
     ("FVG retest", "FVG candle 1", {"entry_mode": "fvg_retest", "stop_ref": "fvg"}),
     ("FVG retest", "2x ATR", {"entry_mode": "fvg_retest", "atr_stop_mult": 2.0}),
+] + [
+    (f"FVG limit, {level_name}", stop_name, {"entry_mode": "fvg_limit", "fvg_limit_level": level, **stop_cfg})
+    for level_name, level in (("near edge", 0.0), ("50%", 0.5))
+    for stop_name, stop_cfg in (
+        ("break candle", {}),
+        ("FVG candle 1", {"stop_ref": "fvg"}),
+        ("2x ATR", {"atr_stop_mult": 2.0}),
+    )
 ]
 
 

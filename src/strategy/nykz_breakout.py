@@ -14,10 +14,14 @@ Rules (session times are New York local, so US DST is handled):
   "fvg_retest", the entry waits instead for the first fair value gap in the
   break direction (3 bars, the middle one at or after the break bar): price
   must trade back into the gap and then close back out of it on the trade
-  side; a close through the far side of the gap cancels the day.
+  side; a close through the far side of the gap cancels the day. With
+  "fvg_limit", a limit order rests in that gap from the bar after it forms,
+  fvg_limit_level of the way from its near edge (0) to its far side (1); a
+  bar opening past it fills at the open, and if the fill bar also reaches the
+  stop the trade counts as stopped.
 - Stop = break bar low - buffer (long) / high + buffer (short); with
   stop_includes_prior_bar, the bar before the break counts too; with
-  stop_ref "fvg" (fvg_retest only), the gap's first bar is used. The day is
+  stop_ref "fvg" (FVG entries only), the gap's first bar is used. The day is
   skipped when the entry bar's bid close is at or beyond the stop.
   atr_stop_mult replaces that stop with entry -/+ mult x ATR (M5, at entry);
   min_stop_atr only widens a stop closer than that many ATRs.
@@ -56,7 +60,7 @@ class Setup:
     range_high: float
     range_low: float
     break_time: pd.Timestamp  # break bar open (UTC)
-    entry_time: pd.Timestamp  # entry bar close (UTC)
+    entry_time: pd.Timestamp  # entry bar close (UTC); a limit fills inside that bar
     entry_pos: int  # row of the entry bar in the bid/ask frame
     entry: float
     stop: float
@@ -64,6 +68,7 @@ class Setup:
     risk_points: float
     spread_points: float
     atr_points: float
+    intrabar_fill: bool = False  # limit fill: the entry bar itself can hit the stop
 
 
 @dataclass
@@ -123,27 +128,50 @@ def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floo
     return 0
 
 
-def _fvg_retest(
-    side: int, start: int, last: int, hi: np.ndarray, lo: np.ndarray, cl: np.ndarray
-) -> tuple[int, int] | None:
-    """(gap's first bar, entry bar) for the first FVG whose middle bar is at or
-    after `start`, once price retests it and closes back out on the trade side."""
+def _first_fvg(
+    side: int, start: int, last: int, hi: np.ndarray, lo: np.ndarray
+) -> tuple[int, int, float, float] | None:
+    """(first bar, third bar, near edge, far edge) of the first fair value gap
+    in the trade direction whose middle bar is at or after `start`."""
     for p in range(start, last):
         c1, c3 = p - 1, p + 1
         if side > 0 and hi[c1] < lo[c3]:
-            near, far = lo[c3], hi[c1]
-        elif side < 0 and lo[c1] > hi[c3]:
-            near, far = hi[c3], lo[c1]
+            return c1, c3, float(lo[c3]), float(hi[c1])
+        if side < 0 and lo[c1] > hi[c3]:
+            return c1, c3, float(hi[c3]), float(lo[c1])
+    return None
+
+
+def _fvg_retest(
+    side: int, near: float, far: float, c3: int, last: int, hi: np.ndarray, lo: np.ndarray, cl: np.ndarray
+) -> int | None:
+    """Bar that closes back out of the gap on the trade side after trading into it."""
+    touched = False
+    for t in range(c3 + 1, last + 1):
+        if side * (cl[t] - far) < 0:
+            return None  # closed through the gap
+        touched = touched or (lo[t] <= near if side > 0 else hi[t] >= near)
+        if touched and side * (cl[t] - near) > 0:
+            return t
+    return None
+
+
+def _limit_fill(
+    side: int, limit: float, c3: int, last: int,
+    ask_op: np.ndarray, ask_lo: np.ndarray, op: np.ndarray, hi: np.ndarray,
+) -> tuple[int, float] | None:
+    """First bar after the gap that fills a buy limit on ask / sell limit on bid."""
+    for t in range(c3 + 1, last + 1):
+        if side > 0:
+            if ask_op[t] <= limit:
+                return t, float(ask_op[t])
+            if ask_lo[t] <= limit:
+                return t, limit
         else:
-            continue
-        touched = False
-        for t in range(c3 + 1, last + 1):
-            if side * (cl[t] - far) < 0:
-                return None  # closed through the gap
-            touched = touched or (lo[t] <= near if side > 0 else hi[t] >= near)
-            if touched and side * (cl[t] - near) > 0:
-                return c1, t
-        return None
+            if op[t] >= limit:
+                return t, float(op[t])
+            if hi[t] >= limit:
+                return t, limit
     return None
 
 
@@ -164,7 +192,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     stop_prior = bool(sig.get("stop_includes_prior_bar", False))
     atr_stop = float(sig.get("atr_stop_mult", 0.0))
     min_stop_atr = float(sig.get("min_stop_atr", 0.0))
-    fvg = sig.get("entry_mode", "next_close") == "fvg_retest"
+    entry_mode = sig.get("entry_mode", "next_close")
+    fvg_level = float(sig.get("fvg_limit_level", 0.0))
     fvg_stop = sig.get("stop_ref", "break") == "fvg"
 
     local = bars.index.tz_convert(sess["timezone"])
@@ -173,6 +202,8 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
     hi = bars["high"].to_numpy()
     lo = bars["low"].to_numpy()
     cl = bars["close"].to_numpy()
+    ask_op = bars["ask_open"].to_numpy()
+    ask_lo = bars["ask_low"].to_numpy()
     ask_cl = bars["ask_close"].to_numpy()
     atr = _atr(hi, lo, cl, int(sig.get("atr_period", 14)))
 
@@ -196,31 +227,37 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
                 continue  # failed confirmation: wait for the next break
             if minute[e] + BAR_MINUTES > cutoff:
                 break
-            if fvg:
-                found = _fvg_retest(side, b, scan[-1], hi, lo, cl)
-                if found is None:
+            c1 = fill = None
+            if entry_mode != "next_close":
+                gap = _first_fvg(side, b, scan[-1], hi, lo)
+                if gap is None:
                     break
-                c1, e = found
-                if minute[e] + BAR_MINUTES > cutoff:
+                c1, c3, near, far = gap
+                if entry_mode == "fvg_limit":
+                    limit = near + fvg_level * (far - near)
+                    fill = _limit_fill(side, limit, c3, scan[-1], ask_op, ask_lo, op, hi)
+                    e = fill[0] if fill else None
+                else:
+                    e = _fvg_retest(side, near, far, c3, scan[-1], hi, lo, cl)
+                if e is None or minute[e] + BAR_MINUTES > cutoff:
                     break
 
-            ref = [c1] if fvg and fvg_stop else [b - 1, b] if stop_prior else [b]
-            if side > 0:
-                stop = float(lo[ref].min()) - buffer
-                if cl[e] <= stop:
-                    break
-                entry = float(ask_cl[e])
+            ref = [c1] if c1 is not None and fvg_stop else [b - 1, b] if stop_prior else [b]
+            stop = float(lo[ref].min()) - buffer if side > 0 else float(hi[ref].max()) + buffer
+            if fill:
+                entry = fill[1]
+            elif side * (cl[e] - stop) <= 0:
+                break  # entry bar closed at or beyond the stop
             else:
-                stop = float(hi[ref].max()) + buffer
-                if cl[e] >= stop:
-                    break
-                entry = float(cl[e])
-            a = float(atr[e])
+                entry = float(ask_cl[e] if side > 0 else cl[e])
+            a = float(atr[c3] if fill else atr[e])  # a limit's stop is set when it is placed
             if atr_stop > 0:
                 stop = entry - side * atr_stop * a
             elif abs(entry - stop) < min_stop_atr * a:
                 stop = entry - side * min_stop_atr * a
-            risk = abs(entry - stop)
+            risk = side * (entry - stop)
+            if risk <= 0:
+                break
 
             setups.append(
                 Setup(
@@ -237,6 +274,7 @@ def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
                     risk_points=risk,
                     spread_points=float(ask_cl[e] - cl[e]),
                     atr_points=a,
+                    intrabar_fill=fill is not None,
                 )
             )
             break
@@ -256,6 +294,9 @@ def _first_exit(
     """First bar to hit the stop or target. A moved stop applies from the next bar."""
     side, entry, tp = s.side, s.entry, s.take_profit
     stop, best = s.stop, entry
+    j = s.entry_pos
+    if s.intrabar_fill and (l[j] <= stop if side > 0 else h[j] >= stop):
+        return j, stop, "stop"  # order inside the fill bar unknown: assume the worst
     for j in range(s.entry_pos + 1, len(o)):
         reason = "stop" if stop == s.stop else "breakeven" if stop == entry else "trail"
         if side > 0:
@@ -311,6 +352,7 @@ def simulate(
 
         fields = asdict(s)
         fields.pop("entry_pos")
+        fields.pop("intrabar_fill")
         trades.append(
             KZTrade(
                 **fields,

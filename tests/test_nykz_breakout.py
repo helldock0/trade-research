@@ -298,3 +298,30 @@ def test_fvg_retest_short():
     )
     (s,) = find_setups(bars, _cfg(**FVG_CFG))
     assert (s.side, s.entry, s.stop) == (-1, 97.5, 102.0)
+
+
+LIMIT_CFG = {"confirm_close": True, "entry_mode": "fvg_limit"}
+
+
+def test_fvg_limit_fills_at_the_near_edge_on_ask():
+    # Gap 101-101.8; ask low of the dip bar is 101.5 (bid 101.0 + 0.5 spread).
+    bars = _day("2024-07-10", FVG_BREAK + [(103, 103.2, 101.0, 102.4)])
+    (s,) = find_setups(bars, _cfg(**LIMIT_CFG))
+    assert s.intrabar_fill
+    assert (s.entry, s.stop) == (101.8, 98.0)
+    assert s.take_profit == pytest.approx(101.8 + 4 * 3.8)
+    # A midpoint limit (101.4) is never reached by the ask.
+    assert find_setups(bars, _cfg(**LIMIT_CFG, fvg_limit_level=0.5)) == []
+
+
+def test_fvg_limit_gap_open_fills_at_the_open():
+    bars = _day("2024-07-10", FVG_BREAK + [(101.0, 101.5, 100.8, 101.2)])  # ask opens 101.5
+    assert find_setups(bars, _cfg(**LIMIT_CFG))[0].entry == 101.5
+
+
+def test_fvg_limit_fill_bar_that_reaches_the_stop_is_a_loss():
+    bars = _day("2024-07-10", FVG_BREAK + [(103, 103.2, 96.5, 102.4), (102.4, 120, 102, 119)])
+    (t,) = run(bars, _cfg(**LIMIT_CFG, stop_ref="fvg"))[0]  # stop 97, filled 101.8
+    assert (t.exit_reason, t.exit_price) == ("stop", 97.0)
+    assert t.r_multiple == pytest.approx(-1.0)
+    assert t.exit_time == pd.Timestamp("2024-07-10 10:15", tz="America/New_York")

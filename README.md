@@ -58,7 +58,7 @@ python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-
 python scripts/run_nykz_breakout.py
 python scripts/compare_nykz_breakout.py --grid break   # clean-break / stop placement, 2023-26 + 2018-22
 python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakeven / trailing
-python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest-and-confirm entry vs next close
+python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close
 
 # 3) Tests
 python -m pytest -q
