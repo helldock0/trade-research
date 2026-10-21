@@ -18,6 +18,7 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
+| `rolling_box` | Rolling M15 box breakout, Tokyo open to 01:00 IST, 35 markets x 2,592 setups; best pooled OOS ~-0.17R, gross edge ~0 ([notes](rolling_box.md)) | NO-GO |
 
 ## Active
 
@@ -26,3 +27,6 @@ None. All current lines are NO-GO.
 ## Next
 
 Pick a new hypothesis (do not stack knobs on rejected XAU / majors HTF lines).
+Open leads from `rolling_box` (not validated): USDJPY session-hold breakout with a
+box-middle stop (+0.21R gross every year, needs ~half the modelled costs) and
+NAS100 around the NY cash open.
