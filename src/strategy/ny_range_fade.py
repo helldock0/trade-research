@@ -7,6 +7,7 @@ User-supplied rules:
 
 The rules give no stop and no time exit, so both are config knobs:
   - stop_mode: none (literal) | range_mult (stop = broken edge +/- k * range width)
+               | atr (stop = entry +/- k * ATR(atr_period) on atr_timeframe bars)
   - entry_end / flat_time: last NY time for new entries / force-flat NY time
 
 Self-contained M1 simulator: the shared engine recomputes TP as an R multiple and
@@ -29,7 +30,7 @@ from src.backtest.costs import (
     pip_size,
     pip_value_per_lot,
 )
-from src.data.bars import ensure_utc_index
+from src.data.bars import atr, ensure_utc_index, resample_ohlc
 from src.features.sessions import parse_hhmm
 
 
@@ -47,6 +48,7 @@ class FadeTrade:
     range_pips: float
     take_profit: float
     stop: float  # nan when stop_mode == none
+    stop_ru: float  # entry-to-stop distance in range widths (nan when no stop)
     exit_reason: str  # tp | stop | time
     gross_ru: float
     pnl_pips: float
@@ -65,6 +67,15 @@ def _session_minutes(strategy_cfg: dict[str, Any]) -> dict[str, int]:
     if not out["range_start"] < out["range_end"] <= out["entry_end"] <= out["flat_time"]:
         raise ValueError(f"Expected range_start < range_end <= entry_end <= flat_time, got {s}")
     return out
+
+
+def completed_atr(bars: pd.DataFrame, rule: str, period: int) -> pd.Series:
+    """ATR(period) on `rule` bars, as known at each M1 bar's open (completed bars only)."""
+    htf = resample_ohlc(bars, rule)
+    a = atr(htf["high"], htf["low"], htf["close"], period=period)
+    # A bar labelled T (closed=left) is only complete at T + rule
+    a.index = a.index + pd.tseries.frequencies.to_offset(rule)
+    return a.reindex(ensure_utc_index(bars).index, method="ffill")
 
 
 def simulate_symbol(
@@ -86,8 +97,11 @@ def simulate_symbol(
     if entry_mode not in ("close", "touch"):
         raise ValueError(f"entry_mode must be close|touch, got {entry_mode}")
     stop_mode = str(sig.get("stop_mode", "none"))
+    if stop_mode not in ("none", "range_mult", "atr"):
+        raise ValueError(f"stop_mode must be none|range_mult|atr, got {stop_mode}")
     stop_mult = float(sig.get("stop_range_mult", 1.0))
-    has_stop = stop_mode == "range_mult"
+    atr_mult = float(sig.get("stop_atr_mult", 1.0))
+    has_stop = stop_mode != "none"
     max_trades = int(sig.get("max_trades_per_day", 1))
     min_range_bars = int(sig.get("min_range_bars", 0))
     min_range_pips = float(sig.get("min_range_pips", 0.0) or 0.0)
@@ -97,6 +111,8 @@ def simulate_symbol(
     comm_usd = pair_cost(symbol, costs_cfg)["commission_per_lot_usd"]
 
     x = ensure_utc_index(bars)
+    if stop_mode == "atr":
+        x["atr"] = completed_atr(x, str(sig.get("atr_timeframe", "15min")), int(sig.get("atr_period", 14)))
     local = x.index.tz_convert(strategy_cfg["sessions"]["timezone"])
     mins = np.asarray(local.hour * 60 + local.minute)
     keep = (mins >= rs) & (mins < flat) & np.asarray(local.dayofweek < 5)
@@ -106,6 +122,7 @@ def simulate_symbol(
     h = x["high"].to_numpy(float)
     lo = x["low"].to_numpy(float)
     c = x["close"].to_numpy(float)
+    atr_v = x["atr"].to_numpy(float) if stop_mode == "atr" else None
 
     day_key = local.normalize()
     day_ns = day_key.asi8
@@ -113,7 +130,13 @@ def simulate_symbol(
     ends = np.r_[starts[1:], len(day_ns)]
 
     trades: list[FadeTrade] = []
-    counts = {"days": 0, "days_with_range": 0, "skipped_ambiguous": 0, "skipped_beyond_stop": 0}
+    counts = {
+        "days": 0,
+        "days_with_range": 0,
+        "skipped_ambiguous": 0,
+        "skipped_beyond_stop": 0,
+        "skipped_no_atr": 0,
+    }
 
     for s, e in zip(starts, ends):
         counts["days"] += 1
@@ -158,7 +181,15 @@ def simulate_symbol(
                 entry_mid = max(rh, o[g]) if side < 0 else min(rl, o[g])
                 first_exit = k
             tp = rl if side < 0 else rh
-            stop = (rh + stop_mult * width if side < 0 else rl - stop_mult * width) if has_stop else np.nan
+            if stop_mode == "range_mult":
+                stop = rh + stop_mult * width if side < 0 else rl - stop_mult * width
+            elif stop_mode == "atr":
+                if not np.isfinite(atr_v[g]) or atr_v[g] <= 0:
+                    counts["skipped_no_atr"] += 1
+                    break
+                stop = entry_mid - side * atr_mult * atr_v[g]
+            else:
+                stop = np.nan
             if has_stop and (entry_mid >= stop if side < 0 else entry_mid <= stop):
                 counts["skipped_beyond_stop"] += 1
                 break
@@ -218,6 +249,7 @@ def simulate_symbol(
                     range_pips=width_pips,
                     take_profit=tp,
                     stop=stop,
+                    stop_ru=abs(stop - entry_mid) / width,
                     exit_reason=reason,
                     gross_ru=side * (exit_mid - entry_mid) / width,
                     pnl_pips=pnl_pips,
@@ -278,5 +310,6 @@ def summarize(tf: pd.DataFrame) -> dict[str, Any]:
         "max_dd_ru": float(-dd.min()),
         "expectancy_pips": float(tf["pnl_pips"].mean()),
         "median_range_pips": float(tf["range_pips"].median()),
+        "median_stop_ru": float(tf["stop_ru"].median()),
         "p95_mae_ru": float(tf["mae_ru"].quantile(0.95)),
     }
