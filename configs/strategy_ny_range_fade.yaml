@@ -12,6 +12,10 @@ universe:
   - AUDUSD
   - USDCAD
   - NZDUSD
+  - NAS100
+  - SPX500
+  - US30
+  - US2000
 
 timeframe: M1
 
@@ -27,7 +31,7 @@ signal:
   stop_mode: none        # none (literal) | range_mult
   stop_range_mult: 1.0   # range_mult: stop = broken edge +/- mult * range width
   max_trades_per_day: 1  # per symbol; >1 re-arms after each exit (same range)
-  min_range_bars: 50     # of 60; skips holiday / gap days
+  min_range_bars: 30     # of 60; skips holiday / gap days (index pre-market can be thin)
   min_range_pips: 0.0
   max_range_pips: null
 

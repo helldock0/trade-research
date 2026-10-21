@@ -29,6 +29,23 @@ pairs:
     half_spread_pips: 20.0
     slippage_pips: 5.0
     commission_per_lot_usd: 7.0
+  # US index CFDs: "pips" are index points; commission-free CFD pricing
+  NAS100:
+    half_spread_pips: 0.6
+    slippage_pips: 0.4
+    commission_per_lot_usd: 0.0
+  SPX500:
+    half_spread_pips: 0.25
+    slippage_pips: 0.1
+    commission_per_lot_usd: 0.0
+  US30:
+    half_spread_pips: 1.0
+    slippage_pips: 0.5
+    commission_per_lot_usd: 0.0
+  US2000:
+    half_spread_pips: 0.2
+    slippage_pips: 0.1
+    commission_per_lot_usd: 0.0
 
 pip_size:
   EURUSD: 0.0001
@@ -37,3 +54,7 @@ pip_size:
   AUDUSD: 0.0001
   USDCAD: 0.0001
   XAUUSD: 0.01
+  NAS100: 1.0
+  SPX500: 1.0
+  US30: 1.0
+  US2000: 1.0
