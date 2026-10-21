@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -9,7 +10,7 @@ import pandas as pd
 
 from src.config import ROOT, ensure_dirs, load_strategy_config
 
-# Majors (USD crosses) + typical major crosses (minors) + XAUUSD.
+# Majors (USD crosses) + typical major crosses (minors) + XAUUSD + index CFDs.
 MAJORS = [
     "EURUSD",
     "GBPUSD",
@@ -46,7 +47,18 @@ MINORS = [
 
 METALS = ["XAUUSD"]
 
+# Dukascopy index CFDs (prop-firm style names; prices in index points).
+INDICES = [
+    "US30",
+    "NAS100",
+    "SPX500",
+    "GER40",
+    "UK100",
+    "JPN225",
+]
+
 FULL_FX_UNIVERSE = MAJORS + MINORS + METALS
+FULL_UNIVERSE = FULL_FX_UNIVERSE + INDICES
 
 # Canonical bar timeframes exposed by dukascopy-python (MT5-style names).
 ALL_TIMEFRAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1")
@@ -118,6 +130,13 @@ SYMBOL_TO_SLASH = {
     "NZDCHF": "NZD/CHF",
     "NZDCAD": "NZD/CAD",
     "XAUUSD": "XAU/USD",
+    # Index CFDs (no instrument constants in dukascopy-python for these)
+    "US30": "USA30.IDX/USD",
+    "NAS100": "USATECH.IDX/USD",
+    "SPX500": "USA500.IDX/USD",
+    "GER40": "DEU.IDX/EUR",
+    "UK100": "GBR.IDX/GBP",
+    "JPN225": "JPN.IDX/JPY",
 }
 
 INTERVAL_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {
@@ -278,11 +297,13 @@ def download_universe(
     force: bool = False,
     sleep_s: float = 0.15,
     continue_on_error: bool = True,
+    workers: int = 1,
 ) -> dict[str, Path]:
     """Download and cache Dukascopy OHLC for the strategy universe.
 
     Default: M15 only (H1 features are derived from M15 in the strategy).
-    Skips existing parquet files unless force=True.
+    Skips existing parquet files unless force=True. ``workers`` > 1 fetches
+    several symbol/interval files concurrently.
     """
     cfg = load_strategy_config()
     symbols = list(symbols or cfg["universe"])
@@ -300,32 +321,35 @@ def download_universe(
     paths: dict[str, Path] = {}
     failures: dict[str, str] = {}
     interval_list = list(intervals)
-    total = len(symbols) * len(interval_list)
-    done = 0
-
     # Interval-outer so all symbols get coarse TFs before any M1/M5 crawl.
-    for interval in interval_list:
-        for symbol in symbols:
-            done += 1
-            path = parquet_path(symbol, interval, cache_dir)
-            key = f"{symbol}_{interval}"
-            if path.exists() and not force:
-                print(f"[skip] ({done}/{total}) {key} exists at {path}", flush=True)
-                paths[key] = path
-                continue
-            print(
-                f"[fetch] ({done}/{total}) {key} {start_dt.date()} -> {end_dt.date()}",
-                flush=True,
-            )
+    jobs = [(interval, symbol) for interval in interval_list for symbol in symbols]
+    total = len(jobs)
+
+    def _one(n: int, interval: str, symbol: str) -> tuple[str, Path]:
+        path = parquet_path(symbol, interval, cache_dir)
+        key = f"{symbol}_{interval}"
+        if path.exists() and not force:
+            print(f"[skip] ({n}/{total}) {key} exists at {path}", flush=True)
+            return key, path
+        print(f"[fetch] ({n}/{total}) {key} {start_dt.date()} -> {end_dt.date()}", flush=True)
+        df = fetch_symbol_ohlc(symbol, start_dt, end_dt, interval=interval, sleep_s=sleep_s)
+        if df.empty:
+            raise RuntimeError(f"No data returned for {key}")
+        save_parquet(df, path)
+        print(f"[saved] {key}: {len(df)} bars -> {path}", flush=True)
+        return key, path
+
+    # Requests are network-bound, so threads parallelise symbols well.
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = {
+            pool.submit(_one, n, interval, symbol): f"{symbol}_{interval}"
+            for n, (interval, symbol) in enumerate(jobs, start=1)
+        }
+        for fut in as_completed(futures):
+            key = futures[fut]
             try:
-                df = fetch_symbol_ohlc(
-                    symbol, start_dt, end_dt, interval=interval, sleep_s=sleep_s
-                )
-                if df.empty:
-                    raise RuntimeError(f"No data returned for {key}")
-                save_parquet(df, path)
-                print(f"[saved] {key}: {len(df)} bars -> {path}", flush=True)
-                paths[key] = path
+                k, path = fut.result()
+                paths[k] = path
             except Exception as exc:  # noqa: BLE001 - resilient bulk download
                 msg = f"{type(exc).__name__}: {exc}"
                 failures[key] = msg

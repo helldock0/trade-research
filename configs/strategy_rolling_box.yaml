@@ -1,0 +1,80 @@
+# Rolling 15-minute box breakout — every M15 candle from Tokyo open to NY end is a box;
+# trade the first candle close beyond its high/low. Swept on M1 (scripts/run_rolling_box.py).
+strategy: rolling_box
+
+universe:
+  # Majors
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - USDCHF
+  - AUDUSD
+  - USDCAD
+  - NZDUSD
+  # Minors
+  - EURGBP
+  - EURJPY
+  - EURCHF
+  - EURAUD
+  - EURCAD
+  - EURNZD
+  - GBPJPY
+  - GBPCHF
+  - GBPAUD
+  - GBPCAD
+  - GBPNZD
+  - AUDJPY
+  - AUDCHF
+  - AUDCAD
+  - AUDNZD
+  - CADJPY
+  - CADCHF
+  - CHFJPY
+  - NZDJPY
+  - NZDCHF
+  - NZDCAD
+  # Metals
+  - XAUUSD
+  # Indices
+  - US30
+  - NAS100
+  - SPX500
+  - GER40
+  - UK100
+  - JPN225
+
+sessions:
+  timezone: UTC
+  # IST = UTC+5:30 (no DST). Tokyo open 05:30 IST = 00:00 UTC; NY end 01:00 IST = 19:30 UTC.
+  # Boxes are the M15 candles 00:00-19:15 UTC (78 per day); always flat at the session end.
+  start: "00:00"
+  end: "19:30"
+
+signal:
+  box_minutes: 15
+  atr_period: 14  # M15 ATR including the box candle (known at box close)
+
+sweep:
+  # Candle that must close beyond the box (minutes)
+  confirm_tf_minutes: [1, 5, 15]
+  # How long after the box closes a breakout is still valid (minutes)
+  window_minutes: [15, 30, 45, 60, 90, 120]
+  # opposite = other side of box, mid = box midpoint, atr:K = K x ATR from entry
+  stops: [opposite, mid, "atr:1", "atr:2"]
+  # tp:R fixed target, time:N close after N min, session = hold to 01:00 IST,
+  # trail_r:A:D = after +A R trail D R behind best price, trail_atr:K = trail K x ATR
+  exits: ["tp:1", "tp:1.5", "tp:2", "tp:3", "time:15", "time:60", session, "trail_r:1:1", "trail_atr:1"]
+  # one = one open trade per symbol; multi = every box trades independently
+  concurrency: [one, multi]
+  # Skip trades whose stop is smaller than K x round-trip cost (0 = no filter)
+  min_risk_cost: [0, 3]
+
+validation:
+  # Configs are ranked on data before this date and checked on data after it
+  oos_start: "2023-01-01"
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet
+  timeframe: M1
