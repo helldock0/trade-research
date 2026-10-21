@@ -3,6 +3,8 @@
 Private research harness for FTMO-style prop challenge strategies.
 
 Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitignored).
+A snapshot of the parquet files (M1 bid; M5 bid + ask for 13 markets, 2018 onward) is on the `data`
+branch via Git LFS; see that branch's README to restore it into `data/parquet`.
 
 ## Strategy status
 
