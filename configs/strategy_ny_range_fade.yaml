@@ -1,0 +1,52 @@
+# NY range fade v1 — fade the first break of the 08:12-09:12 New York range.
+# User rules: break above range high -> sell, TP range low; break below range low -> buy, TP range high.
+# The rules specify no stop / time exit; base config is the literal no-stop version.
+strategy: ny_range_fade
+
+universe:
+  - XAUUSD
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - USDCHF
+  - AUDUSD
+  - USDCAD
+  - NZDUSD
+
+timeframe: M1
+
+sessions:
+  timezone: America/New_York
+  range_start: "08:12"
+  range_end: "09:12"     # range = M1 bars opening in [range_start, range_end)
+  entry_end: "12:00"     # no new entries from this NY time
+  flat_time: "16:00"     # force-flat at the close of the last bar before this NY time
+
+signal:
+  entry_mode: close      # close: first M1 close beyond the range | touch: resting limit at the edge
+  stop_mode: none        # none (literal) | range_mult
+  stop_range_mult: 1.0   # range_mult: stop = broken edge +/- mult * range width
+  max_trades_per_day: 1  # per symbol; >1 re-arms after each exit (same range)
+  min_range_bars: 50     # of 60; skips holiday / gap days
+  min_range_pips: 0.0
+  max_range_pips: null
+
+# Sensitivity variants: deep-merged over the base config by scripts/run_ny_range_fade.py
+variants:
+  touch_entry:
+    signal: {entry_mode: touch}
+  stop_1x_range:
+    signal: {stop_mode: range_mult, stop_range_mult: 1.0}
+  stop_0.5x_range:
+    signal: {stop_mode: range_mult, stop_range_mult: 0.5}
+  touch_stop_1x_range:
+    signal: {entry_mode: touch, stop_mode: range_mult, stop_range_mult: 1.0}
+  entries_until_1030:
+    sessions: {entry_end: "10:30"}
+  reenter_after_exit:
+    signal: {max_trades_per_day: 20}
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet
