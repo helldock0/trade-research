@@ -19,6 +19,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `ny_range_fade` | Fade first break of NY 08:12-09:12 range (M1) | NO-GO |
 
 ## Setup
 
@@ -50,6 +51,10 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
 python scripts/run_all.py --strategies cssm,orb
+
+# 2b) NY range fade (standalone M1 simulator + variants)
+python scripts/download_data.py --symbols XAUUSD,EURUSD,NAS100 --intervals M1
+python scripts/run_ny_range_fade.py
 
 # 3) Tests
 python -m pytest -q
