@@ -46,6 +46,9 @@ MINORS = [
 
 METALS = ["XAUUSD"]
 
+# US index CFDs (Dukascopy JForex names: USATECH, USA500, USA30, US small cap 2000).
+INDICES = ["NAS100", "SPX500", "US30", "US2000"]
+
 FULL_FX_UNIVERSE = MAJORS + MINORS + METALS
 
 # Canonical bar timeframes exposed by dukascopy-python (MT5-style names).
@@ -85,6 +88,11 @@ SYMBOL_TO_INSTRUMENT_ATTR = {
     "NZDCAD": "INSTRUMENT_FX_CROSSES_NZD_CAD",
     # Metals
     "XAUUSD": "INSTRUMENT_FX_METALS_XAU_USD",
+    # Indices
+    "NAS100": "INSTRUMENT_IDX_AMERICA_E_NQ_100",
+    "SPX500": "INSTRUMENT_IDX_AMERICA_E_SANDP_500",
+    "US30": "INSTRUMENT_IDX_AMERICA_E_D_J_IND",
+    "US2000": "INSTRUMENT_IDX_AMERICA_USSC2000_IDX_USD",
 }
 
 # Fallback slash notation if instrument attr is missing.
@@ -118,6 +126,10 @@ SYMBOL_TO_SLASH = {
     "NZDCHF": "NZD/CHF",
     "NZDCAD": "NZD/CAD",
     "XAUUSD": "XAU/USD",
+    "NAS100": "E_NQ-100",
+    "SPX500": "E_SandP-500",
+    "US30": "E_D&J-Ind",
+    "US2000": "USSC2000.IDX/USD",
 }
 
 INTERVAL_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {

@@ -18,6 +18,16 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
+| `ny_range_fade` | NY 08:12-09:12 range fade, TP opposite edge; M1 2018-2026, 12 symbols (7 majors, XAU, NAS100/SPX500/US30/US2000): ~-0.16 RU/trade net over 26k trades (t -15.7), gross ~-0.04 RU; all 156 symbol x variant cells (incl. range and ATR stops) negative | NO-GO |
+
+## Notes: `ny_range_fade`
+
+- User-supplied rules: break above range high -> sell (TP range low); break below range low -> buy (TP range high). No stop in the rules.
+- Runner: `python scripts/run_ny_range_fade.py` (own M1 simulator; P&L in range units, RU = P&L / range width).
+- Gross edge ~0: FX/gold hit TP ~35-42% and otherwise bleed to the 16:00 NY flat; indices hit TP ~63% but carry 15-24 RU tail losses after the 09:30 open.
+- Costs ~0.15 RU/trade on FX (14-25 pip ranges), ~0.07-0.09 on indices/gold. Stops (0.5x/1x range) cut tails but stay negative (best pooled -0.11 RU).
+- ATR stops from entry (M15 ATR14 x1/1.5/2/3, daily ATR14 x0.25/0.5; median 0.4-1.9 range widths): pooled -0.113 to -0.139 RU, gross ~0. Indices improve most (NAS100 -0.23 -> -0.03 RU) but no cell turns positive.
+- M1 parquet for the 12 symbols now cached in `data/parquet` (Dukascopy, 2018-01-01 -> 2026-10-21).
 
 ## Active
 
