@@ -80,6 +80,7 @@ def sweep_symbol(
     g = grid_lists(cfg)
     sess, sig = cfg["sessions"], cfg.get("signal", {})
     oos_start = _minutes(cfg["validation"]["oos_start"])
+    low_mult = float(cfg["validation"].get("low_cost_mult", 0.5))
     m1a = m1_arrays(m1)
     boxes = build_boxes(
         m1,
@@ -112,6 +113,7 @@ def sweep_symbol(
                 valid = np.isfinite(r0) & np.isfinite(p)
                 with np.errstate(invalid="ignore", divide="ignore"):
                     rn = net_r(p, r0, side_cost, rt_cost)
+                    rl = net_r(p, r0, low_mult * side_cost, low_mult * rt_cost)
                     rg = p / r0
                 xt = exit_t[:, s_i, e_i]
                 for window in g["window"]:
@@ -122,6 +124,7 @@ def sweep_symbol(
                             keep = one_at_a_time(entry_t, xt, m) if conc == "one" else m
                             r, o = rn[keep], oos[keep]
                             h, y = hour[keep], year[keep]
+                            low = rl[keep]
                             summary_rows.append(
                                 (
                                     cfg_id,
@@ -131,6 +134,8 @@ def sweep_symbol(
                                     float(r[~o].sum()),
                                     float(r[o].sum()),
                                     float(rg[keep].sum()),
+                                    float(low[~o].sum()),
+                                    float(low[o].sum()),
                                     int((r > 0).sum()),
                                     float(r[r > 0].sum()),
                                     float(-r[r < 0].sum()),
@@ -159,6 +164,8 @@ def sweep_symbol(
             "sum_r_is",
             "sum_r_oos",
             "sum_r_gross",
+            "sum_r_low_is",
+            "sum_r_low_oos",
             "wins",
             "win_r",
             "loss_r",
@@ -207,6 +214,8 @@ def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
         out["exp_r_is"] = out["sum_r_is"] / out["n_is"]
         out["exp_r_oos"] = out["sum_r_oos"] / n_oos
         out["exp_r_gross"] = out["sum_r_gross"] / out["n"]
+        out["exp_r_low_is"] = out["sum_r_low_is"] / out["n_is"]
+        out["exp_r_low_oos"] = out["sum_r_low_oos"] / n_oos
         out["win_rate"] = out["wins"] / out["n"]
         out["profit_factor"] = out["win_r"] / out["loss_r"]
         if "n_days" in out:
@@ -217,7 +226,19 @@ def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 def portfolio_summary(summary: pd.DataFrame) -> pd.DataFrame:
     """Pool every symbol's trades per config (equal 1R risk per trade)."""
-    cols = ["n", "n_is", "sum_r", "sum_r_is", "sum_r_oos", "sum_r_gross", "wins", "win_r", "loss_r"]
+    cols = [
+        "n",
+        "n_is",
+        "sum_r",
+        "sum_r_is",
+        "sum_r_oos",
+        "sum_r_gross",
+        "sum_r_low_is",
+        "sum_r_low_oos",
+        "wins",
+        "win_r",
+        "loss_r",
+    ]
     pooled = summary.groupby("cfg_id", as_index=False)[cols].sum()
     pooled["n_symbols"] = summary.groupby("cfg_id")["symbol"].nunique().to_numpy()
     return add_metrics(pooled)

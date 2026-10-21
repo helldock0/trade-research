@@ -72,6 +72,8 @@ sweep:
 validation:
   # Configs are ranked on data before this date and checked on data after it
   oos_start: "2023-01-01"
+  # Also report results at this fraction of configs/costs.yaml (e.g. a raw-spread account)
+  low_cost_mult: 0.5
 
 data:
   start: "2018-01-01"

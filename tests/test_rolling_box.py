@@ -244,6 +244,9 @@ def test_sweep_matches_single_config_trades():
     years = by_year.groupby("cfg_id")["sum_r"].sum()
     np.testing.assert_allclose(years.reindex(summary["cfg_id"]).fillna(0), summary["sum_r"], atol=1e-9)
     assert (summary["n_is"] <= summary["n"]).all() and (summary["n_is"] > 0).any()
+    # Zero-cost scenario reproduces the gross R
+    free = sweep_symbol("EURUSD", m1, {**cfg, "validation": {**cfg["validation"], "low_cost_mult": 0.0}}, costs)[0]
+    np.testing.assert_allclose(free["sum_r_low_is"] + free["sum_r_low_oos"], free["sum_r_gross"], atol=1e-9)
 
     for _, row in table.sample(6, random_state=1).iterrows():
         trades = config_trades(

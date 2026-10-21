@@ -33,6 +33,7 @@ SHOW_COLS = [
     "exp_r_is",
     "exp_r_oos",
     "exp_r_gross",
+    "exp_r_low_oos",
     "win_rate",
     "profit_factor",
 ]
