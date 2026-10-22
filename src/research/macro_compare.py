@@ -193,12 +193,14 @@ def render_markdown(result: dict[str, Any], title: str = "macro_swing variant co
     return "\n".join(lines)
 
 
-def write_compare_report(result: dict[str, Any], out_dir: Path, tag: str | None = None) -> dict[str, Path]:
+def write_compare_report(
+    result: dict[str, Any], out_dir: Path, tag: str | None = None, stem: str = "macro_compare", title: str | None = None
+) -> dict[str, Path]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"macro_compare_{tag}" if tag else "macro_compare"
+    stem = f"{stem}_{tag}" if tag else stem
     p_json = out_dir / f"{stem}.json"
     p_json.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     p_md = out_dir / f"{stem}.md"
-    p_md.write_text(render_markdown(result), encoding="utf-8")
+    p_md.write_text(render_markdown(result, title=title) if title else render_markdown(result), encoding="utf-8")
     return {"json": p_json, "md": p_md}

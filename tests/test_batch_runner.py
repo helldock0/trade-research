@@ -29,6 +29,7 @@ def test_list_strategies_canonical():
         "htf_adx_pullback",
         "event_drift",
         "macro_swing",
+        "tom",
     ]
     assert tuple(list_strategies()) == KNOWN_STRATEGIES
 

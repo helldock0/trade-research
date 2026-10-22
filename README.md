@@ -62,6 +62,11 @@ python scripts/run_macro_ic.py --validate    # signal variants: dev 2018+ vs hol
 # cloud sessions without data/parquet: M15 bars from the data branch (Git LFS)
 python scripts/bars_from_data_branch.py
 
+# 1f) Turn of the month on index CFDs: FRED signal check first, then bars vs a mid-month placebo
+python scripts/run_tom_check.py
+python scripts/bars_from_data_branch.py --pairs NAS100,US500
+python scripts/run_tom_backtest.py
+
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
 

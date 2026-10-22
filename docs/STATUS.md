@@ -21,9 +21,11 @@ Detailed run artifacts stay in `reports/` (local only).
 | `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R. Trailing-stop / correlation-gated basket variants reach OOS ~+0.063R but fail expectancy and PF. On the 2012–2017 holdout the signal itself is negative (pooled 20d IC −0.098; carry −0.137). An expected-hikes input and a wider universe (NZD, CHF, crosses) both fail the pre-registered holdout rule. See "Macro swing" sections below. | NO-GO |
 | `event_drift` | Pricing-in before scheduled releases (23 G10 series), surprise-momentum or gasoline-nowcast signal. `pre` raw −0.006R (t −0.24, n=826), `post` −0.013R, `fade` −0.006R; every engine run negative. The pricing-in rule in the plan makes a flat `pre` a NO-GO. One weak lead (fading US CPI reactions, ~+0.07–0.13R, n 33–71) is parked; see "Event study on bars" below. | NO-GO |
 
+| `tom` | Turn of the month on US index CFDs (long NAS100 from the close before the month's last trading day to the close of the 3rd trading day). The signal check passes on 1971–2017 but has faded since the 2010s. On 2018+ bars it does no better than the same rules on a mid-month window: OOS +0.061R vs placebo +0.112R. See "Turn of the month" below. | NO-GO |
+
 ## Active
 
-None. Both fundamentals lines are rejected (2026-10-22).
+None. Both fundamentals lines and the turn-of-month line are rejected (2026-10-22).
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -209,6 +211,36 @@ Bar backtests, 2018+ only, for information. The holdout already rejects every si
 
 **Verdict: none of the three ideas is kept, and macro_swing stays NO-GO.** The composite's edge is regime-dependent: positive 2018–2026, negative 2012–2017. Reweighting would mean fitting one of the two regimes.
 
+### Turn of the month (2026-10-22, new idea, cloud run)
+
+Hypothesis: US equity indices rise from the last trading day of a month through the first three of the next (Ariel 1987; Lakonishok & Smidt 1988; McConnell & Xu 2008). Everything below was fixed in `configs/strategy_tom.yaml` before the data was looked at.
+
+**Signal check** on FRED daily closes (`python scripts/run_tom_check.py` → `reports/tom_check.md`). TOM days are the last trading day of each month and the first 3 of the next. The test compares the mean daily log return on TOM days with all other days (Welch t). Rule: t ≥ 2 on NASDAQ Composite over the 1971–2017 holdout, and TOM minus other > 0 on 2018+ for both series.
+
+| Series | Window | TOM bp/day | Other bp/day | Diff | t | Month windows | Window hit |
+|---|---|---|---|---|---|---|---|
+| NASDAQ Composite | 1971–2017 | 12.1 | 1.6 | +10.5 | 3.58 | 561 | 0.63 |
+| NASDAQ Composite | 2018+ | 9.0 | 5.2 | +3.9 | 0.48 | 104 | 0.60 |
+| NASDAQ-100 | 1986–2017 | 13.3 | 2.8 | +10.5 | 2.16 | 382 | 0.61 |
+| NASDAQ-100 | 2018+ | 10.0 | 6.0 | +4.0 | 0.48 | 104 | 0.57 |
+
+PASS by the rule. By decade, though, the excess falls from +9 to +16 bp/day (1970s–1990s) to +2 bp (2010s, t 0.39) and +5 bp (2020s, t 0.51): consistent with decay after publication.
+
+**Bar backtest** (`python scripts/run_tom_backtest.py` → `reports/tom_compare.md`).
+- Bars: NAS100 / US500 M15 CFD bars from the data branch.
+- Calendar: US trading days come from the FRED NASDAQ-100 dates.
+- Entry and exit at the bar ending at the 16:00 New York close, with a 2× daily ATR protective stop and no target.
+- Pre-registered before the bar run: TOM counts only if it clears the gates and its OOS expectancy beats a placebo with the same rules on trading days 9–12. The placebo measures plain index drift.
+- The engine now sizes index CFDs at $1 per point per lot (`contracts:` in `configs/costs.yaml`), and `is_cross` no longer misreads NAS100 as an FX cross.
+
+| Variant | Trades | Exp R | PF | Win | Max DD | Return / yr | OOS exp R | Folds + | MC success | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `tom` (NAS100) | 104 | 0.112 | 1.50 | 0.61 | 1.3% | 0.7% | 0.061 | 7/14 | 0.00 | NO-GO |
+| `placebo` (days 9–12) | 105 | 0.093 | 1.43 | 0.55 | 1.8% | 0.6% | **0.112** | 9/14 | 0.00 | NO-GO |
+| `tom_us500` (cross-check) | 104 | 0.008 | 1.03 | 0.54 | 3.3% | 0.0% | −0.077 | 4/14 | 0.00 | NO-GO |
+
+**Verdict: NO-GO.** On 2018+ the TOM trade earns no more than holding the index on any other four days, so the profit is index drift, not a calendar effect. It also cannot pass a prop challenge: 104 trades of about 0.1R at 0.5% risk add up to about 6% in 8.7 years, so the Monte Carlo never reaches the +10% target.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -217,4 +249,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 2. The "price drift without a good forecast" idea is answered: `pre` is flat for these series.
 3. Optional: a stronger external forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied). Re-run `--calendar-only` first. Worth it only together with the parked CPI-fade lead, and that needs out-of-sample bars.
 4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
-5. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).
+5. Turn of the month is NO-GO; the decade table shows the calendar effect has faded since the 2010s.
+6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

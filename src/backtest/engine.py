@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.backtest.costs import (
     commission_usd,
+    contract_size,
     entry_fill_price,
     exit_fill_price,
     is_cross,
@@ -266,7 +267,7 @@ def run_backtest(
 
             fill = exit_fill_price(side, exit_mid, sym, costs_cfg)
             lots = position["lots"]
-            pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, ts))
+            pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, ts), contract_size(sym, costs_cfg))
             comm = commission_usd(lots, sym, costs_cfg)
             pnl -= comm
             r_mult = pnl / (initial_balance * risk_pct / 100.0)
@@ -326,7 +327,7 @@ def run_backtest(
             tp = fill + sig.side * tp_r * risk_price if tp_r > 0 else float("nan")
 
             lots = position_size_lots(
-                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg, quote_usd(sig.symbol, ts)
+                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg, quote_usd(sig.symbol, ts), contract_size(sig.symbol, costs_cfg)
             )
             if lots <= 0:
                 continue
@@ -357,7 +358,7 @@ def run_backtest(
         fill = exit_fill_price(position["side"], close, sym, costs_cfg)
         lots = position["lots"]
         side = position["side"]
-        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, last_ts))
+        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, last_ts), contract_size(sym, costs_cfg))
         comm = commission_usd(lots, sym, costs_cfg)
         pnl -= comm
         trades.append(
@@ -394,12 +395,20 @@ def run_backtest(
     return result
 
 
-def _pnl_usd(side: int, entry: float, exit_px: float, lots: float, symbol: str, usd_per_quote: float | None = None) -> float:
-    """Approximate USD P&L (FX 100k lots; XAU 100 oz); exact when `usd_per_quote` is given."""
+def _pnl_usd(
+    side: int,
+    entry: float,
+    exit_px: float,
+    lots: float,
+    symbol: str,
+    usd_per_quote: float | None = None,
+    contract: float | None = None,
+) -> float:
+    """Approximate USD P&L (FX 100k lots; XAU 100 oz); exact when `usd_per_quote` / `contract` are given."""
     sym = symbol.upper()
     diff = (exit_px - entry) if side > 0 else (entry - exit_px)
-    if usd_per_quote is not None:
-        return diff * lots * 100000.0 * usd_per_quote
+    if usd_per_quote is not None or contract is not None:
+        return diff * lots * (contract or 100000.0) * (usd_per_quote if usd_per_quote is not None else 1.0)
     if "XAU" in sym:
         return diff * lots * 100.0
     if sym.endswith("JPY"):

@@ -50,6 +50,15 @@ pairs:
     half_spread_pips: 0.8
     slippage_pips: 0.25
     commission_per_lot_usd: 7.0
+  # USD index CFDs: "pips" are index points (pip_size 1.0), no commission
+  NAS100:
+    half_spread_pips: 1.0
+    slippage_pips: 0.5
+    commission_per_lot_usd: 0.0
+  US500:
+    half_spread_pips: 0.3
+    slippage_pips: 0.2
+    commission_per_lot_usd: 0.0
   XAUUSD:
     half_spread_pips: 20.0
     slippage_pips: 5.0
@@ -67,4 +76,11 @@ pip_size:
   GBPJPY: 0.01
   AUDJPY: 0.01
   EURGBP: 0.0001
+  NAS100: 1.0
+  US500: 1.0
   XAUUSD: 0.01
+
+# Units per lot where it is not 100k FX / 100 oz gold: USD index CFDs at $1 per point per lot
+contracts:
+  NAS100: 1.0
+  US500: 1.0
