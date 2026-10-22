@@ -29,9 +29,11 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | `dip` basket | The same dip rule across indices (owner request). Pre-registered inclusion on each index's own daily history admits only NAS100, US500 and US30; US2000, GER40, UK100 and JP225 fail. Basket with a 0.7 correlation gate: 127 trades, win 0.71, max DD 1.7%, 12/14 OOS folds positive, but OOS +0.083R and Monte Carlo 0.00. See "Buy the dip: more indices" below. | NO-GO (gates) |
 
+| `tsmom` | Time-series momentum (sign of the 12-month return, held until it flips) across 7 FX majors, gold and 5 index CFDs. Signal check on daily history, vol-scaled and net of costs: 1985–2017 +0.043 a month (t 1.61) and 2018+ −0.090 (t −1.78). Fails both conditions, so no bar run. See "Trend following" below. | NO-GO |
+
 ## Active
 
-None. The fundamentals lines, turn of the month, intraday momentum and buy-the-dip (single index and basket) are all rejected by the gates (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
+None. The fundamentals lines, turn of the month, intraday momentum, buy-the-dip (single index and basket) and trend following are all rejected (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -360,6 +362,30 @@ The rule worked on the large US indices in both eras. Outside the US it held in 
 - Without the correlation gate it stacks the same US dip up to 3 times.
 - More indices do not fix the size problem, because the indices that pass all move together.
 
+### Trend following across asset classes (2026-10-22, new idea)
+
+Hypothesis: time-series momentum (Moskowitz, Ooi & Pedersen 2012; Hurst, Ooi & Pedersen 2017). The rules, fixed in `configs/strategy_tsmom.yaml` before the data was looked at:
+- At each month end, go long or short each market on the sign of its 252-day return, and hold until that sign flips.
+- Markets: 7 FX majors, gold and US500 / NAS100 / GER40 / UK100 / JP225.
+- Signal check (`python scripts/run_tsmom_check.py` → `reports/tsmom_check.md`), per market and month: sign × next month's return, divided by the trailing 60-day volatility scaled to a month.
+- Costs: 2 bp per round trip, plus holding fees of 1.5% a year (FX, gold) or 6% (indices). FX carry is not modeled.
+- The portfolio is the equal-weight mean of the markets.
+- Rule: 1985–2017 mean > 0 with t ≥ 2, and 2018+ mean > 0.
+
+| Portfolio | Months | Avg markets | Mean per month (vol units) | t | Sharpe (yr) |
+|---|---|---|---|---|---|
+| 1985–2017 | 396 | 11.9 | +0.043 | 1.61 | 0.28 |
+| 2018+ | 104 | 13.0 | −0.090 | −1.78 | −0.60 |
+
+- By decade the portfolio is positive through the 2000s (1980s t 1.88), then negative in the 2010s (t −1.34) and 2020s (t −0.87).
+- Per market, 2018+ is negative for six of seven FX pairs and for GER40 / UK100.
+- Gold is positive in both windows (holdout t 2.45, dev t 1.26) and USDJPY on the holdout (t 2.76). Picking the best of 13 after the fact is not a result.
+- The universe lacks bonds and broad commodities, where trend following has historically earned most of its returns.
+
+Alignment fix after the first run (disclosed): the first run averaged markets by exact month-end date. Holidays and time zones split each month into several rows, giving 446 "months" for 33 years. Rows are now aligned by calendar month. Both runs fail both conditions: first run holdout t 1.32 and dev −0.121; fixed run t 1.61 and −0.090.
+
+**Verdict: NO-GO.** Per the plan, no bar backtest was run. The strategy (`src/strategy/tsmom.py`, tested) and the gold M15 bars are ready if a narrower, pre-registered trend hypothesis is ever tested.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -371,4 +397,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 5. Turn of the month is NO-GO; the decade table shows the calendar effect has faded since the 2010s.
 5b. Intraday momentum is NO-GO: below costs before 2022, gone after. `scripts/run_variants.py` runs any config's `variants:`.
 5c. Buy the dip is NO-GO by the gates but has a real, thin edge. More indices were tried: only US ones pass, so the basket is about one bet. The remaining lever is risk sizing, which is the owner's call.
+5d. Trend following across FX / gold / indices is NO-GO: weak before 2010 and negative since.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

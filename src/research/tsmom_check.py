@@ -5,8 +5,9 @@ Per instrument, at each month end m: position = sign(log return over the past
 month end. Net = position x return - (1 bp a side per unit of position change)
 - financing for the month; then divided by the trailing `vol_window`-day
 volatility scaled to a month, so every instrument contributes in risk units.
-The portfolio is the mean across instruments available that month. The final
-(partial) month of each series is dropped.
+The portfolio is the mean across instruments available that calendar month
+(rows are aligned by month, since markets end their months on different
+days). The final (partial) month of each series is dropped.
 """
 
 from __future__ import annotations
@@ -89,7 +90,8 @@ def run_tsmom_check(history: dict[str, pd.Series], cfg: dict[str, Any]) -> dict[
             continue
         fin = float(val["index_financing_pct_per_year"] if sym in INDEX_SYMBOLS else val["fx_financing_pct_per_year"])
         t = monthly_tsmom(s, int(sig.get("lookback_days", 252)), int(val.get("vol_window_days", 60)), float(val.get("round_trip_cost_bp", 2.0)), fin)
-        per[sym] = t["scaled"]
+        # align by calendar month, not date: markets end their months on different days (holidays, time zones)
+        per[sym] = t["scaled"].set_axis(t.index.to_period("M").to_timestamp())
         rows.append({
             "symbol": sym, "series": name, "missing": False, "first": str(t.index.min().date()) if len(t) else None,
             "holdout": _stats(_cut(t["scaled"], *val["holdout"])), "dev": _stats(_cut(t["scaled"], *val["dev"])),

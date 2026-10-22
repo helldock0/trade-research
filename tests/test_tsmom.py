@@ -53,6 +53,12 @@ def test_check_finds_planted_trends_and_rejects_noise():
     assert run_tsmom_check(noise, _cfg())["portfolio"]["holdout"]["t"] < 2.0
     md = render_markdown(res, _cfg())
     assert "**PASS**" in md and "## Per market" in md and "| M0 |" in md
+    # markets whose month ends fall on different days still form one portfolio row per month
+    shifted = {k: v.drop(v.index[v.index.is_month_end]) if k == "S1" else v for k, v in trendy.items()}
+    res2 = run_tsmom_check(shifted, _cfg())
+    n_months = res2["portfolio"]["holdout"]["n"]
+    assert n_months == res["portfolio"]["holdout"]["n"] and n_months <= 12 * 24
+    assert all(y["n"] <= 12 for y in res2["by_year_dev"])
     missing = run_tsmom_check({"S0": trendy["S0"]}, _cfg())
     assert any(r.get("missing") for r in missing["rows"]) and not math.isnan(missing["portfolio"]["holdout"]["mean"])
 
