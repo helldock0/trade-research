@@ -19,6 +19,7 @@ from src.data.bi5_download import download_via_bi5, generate_synthetic_ohlc
 from src.data.dukascopy_ingest import (
     ALL_TIMEFRAMES,
     FULL_FX_UNIVERSE,
+    FULL_UNIVERSE,
     download_universe,
     parquet_path,
     save_parquet,
@@ -56,6 +57,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Download majors + minor crosses + XAUUSD (ignores strategy universe)",
     )
     parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Download --full-fx plus index CFDs (US30, NAS100, SPX500, GER40, UK100, JPN225)",
+    )
+    parser.add_argument(
         "--symbols",
         default=None,
         help="Comma-separated symbols (overrides --full-fx / strategy universe)",
@@ -74,6 +80,12 @@ def main(argv: list[str] | None = None) -> None:
         default=0.15,
         help="Seconds to sleep between Dukascopy year chunks (rate limit)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Parallel symbol downloads (network-bound; 4-8 is reasonable)",
+    )
     args = parser.parse_args(argv)
 
     ensure_dirs()
@@ -82,7 +94,12 @@ def main(argv: list[str] | None = None) -> None:
 
     symbols = _parse_csv(args.symbols)
     if symbols is None:
-        symbols = list(FULL_FX_UNIVERSE) if args.full_fx else list(cfg["universe"])
+        if args.full:
+            symbols = list(FULL_UNIVERSE)
+        elif args.full_fx:
+            symbols = list(FULL_FX_UNIVERSE)
+        else:
+            symbols = list(cfg["universe"])
 
     if args.intervals is None:
         intervals = ["M15"]
@@ -126,6 +143,7 @@ def main(argv: list[str] | None = None) -> None:
             force=args.force,
             sleep_s=args.sleep,
             continue_on_error=True,
+            workers=args.workers,
         )
         return
     except Exception as exc:

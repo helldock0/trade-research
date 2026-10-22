@@ -1,0 +1,81 @@
+# Rolling 15-minute box breakout, one trade per day in the EMA direction.
+# Same boxes as strategy_rolling_box.yaml; each day the first breakout after the start
+# time whose direction agrees with the EMA is the only trade. Swept on M1
+# (scripts/run_rolling_box.py --config strategy_rolling_box_ema.yaml).
+strategy: rolling_box_ema
+
+universe:
+  # Majors
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - USDCHF
+  - AUDUSD
+  - USDCAD
+  - NZDUSD
+  # Minors
+  - EURGBP
+  - EURJPY
+  - EURCHF
+  - EURAUD
+  - EURCAD
+  - EURNZD
+  - GBPJPY
+  - GBPCHF
+  - GBPAUD
+  - GBPCAD
+  - GBPNZD
+  - AUDJPY
+  - AUDCHF
+  - AUDCAD
+  - AUDNZD
+  - CADJPY
+  - CADCHF
+  - CHFJPY
+  - NZDJPY
+  - NZDCHF
+  - NZDCAD
+  # Metals
+  - XAUUSD
+  # Indices
+  - US30
+  - NAS100
+  - SPX500
+  - GER40
+  - UK100
+  - JPN225
+
+sessions:
+  timezone: UTC
+  # IST = UTC+5:30 (no DST). Boxes 00:00-19:15 UTC; always flat at 19:30 UTC (01:00 IST).
+  start: "00:00"
+  end: "19:30"
+
+signal:
+  box_minutes: 15
+  atr_period: 14  # M15 ATR including the box candle (known at box close)
+
+sweep:
+  # Box close above the EMA -> buys only, below -> sells only. none = either side (control).
+  # EMA uses only bars closed by the box close.
+  ema: [none, "m15:50", "m15:200", "h1:200"]
+  # First box of the day to consider (UTC): 05:30 IST Tokyo, 12:30 IST London, 18:30 IST New York
+  start_times: ["00:00", "07:00", "13:00"]
+  confirm_tf_minutes: [1, 15]
+  window_minutes: [15, 60, 120]
+  stops: [opposite, mid, "atr:2"]
+  exits: ["tp:1", "tp:2", "tp:3", session, "trail_r:1:1"]
+  # Skip trades whose stop is smaller than K x round-trip cost (0 = no filter)
+  min_risk_cost: [0, 3]
+
+validation:
+  # Configs are ranked on data before this date and checked on data after it
+  oos_start: "2023-01-01"
+  # Also report results at this fraction of configs/costs.yaml (e.g. a raw-spread account)
+  low_cost_mult: 0.5
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet
+  timeframe: M1

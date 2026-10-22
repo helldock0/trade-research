@@ -19,6 +19,8 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `rolling_box` | Rolling M15 box breakout, Tokyo open to NY end (M1 sweep) | NO-GO |
+| `rolling_box_ema` | Same, one trade/day in the EMA direction | NO-GO |
 
 ## Setup
 
@@ -50,6 +52,11 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
 python scripts/run_all.py --strategies cssm,orb
+
+# 2b) Rolling 15-minute box breakout sweep (needs M1 data, incl. indices)
+python scripts/download_data.py --full --intervals M1 --workers 8
+python scripts/run_rolling_box.py --workers 4
+python scripts/run_rolling_box.py --config strategy_rolling_box_ema.yaml --out reports/rolling_box_ema
 
 # 3) Tests
 python -m pytest -q

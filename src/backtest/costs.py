@@ -2,6 +2,32 @@ from __future__ import annotations
 
 from typing import Any
 
+# Quote currency of each index CFD (prices are in index points).
+INDEX_QUOTE = {
+    "US30": "USD",
+    "NAS100": "USD",
+    "SPX500": "USD",
+    "GER40": "EUR",
+    "UK100": "GBP",
+    "JPN225": "JPY",
+}
+
+# Rough USD value of one unit of each quote currency (commission conversion only).
+QUOTE_USD_APPROX = {
+    "USD": 1.0,
+    "EUR": 1.10,
+    "GBP": 1.27,
+    "JPY": 0.0075,
+    "CHF": 1.12,
+    "CAD": 0.74,
+    "AUD": 0.67,
+    "NZD": 0.61,
+}
+
+
+def is_index(symbol: str) -> bool:
+    return symbol.upper() in INDEX_QUOTE
+
 
 def pair_cost(symbol: str, costs_cfg: dict[str, Any]) -> dict[str, float]:
     base = dict(costs_cfg.get("default", {}))
@@ -15,7 +41,9 @@ def pair_cost(symbol: str, costs_cfg: dict[str, Any]) -> dict[str, float]:
 
 def pip_size(symbol: str, costs_cfg: dict[str, Any]) -> float:
     sym = symbol.upper()
-    if "XAU" in sym:
+    if is_index(sym):
+        default = 1.0
+    elif "XAU" in sym:
         default = 0.01
     elif "JPY" in sym:
         default = 0.01
@@ -82,3 +110,29 @@ def position_size_lots(
 def commission_usd(lots: float, symbol: str, costs_cfg: dict[str, Any]) -> float:
     c = pair_cost(symbol, costs_cfg)
     return abs(lots) * float(c["commission_per_lot_usd"])
+
+
+def contract_size(symbol: str) -> float:
+    """Units per 1.0 lot: FX 100k base, XAUUSD 100 oz, index CFDs 1 per point."""
+    sym = symbol.upper()
+    if is_index(sym):
+        return 1.0
+    if "XAU" in sym:
+        return 100.0
+    return 100000.0
+
+
+def round_trip_cost_price(symbol: str, costs_cfg: dict[str, Any]) -> tuple[float, float]:
+    """(entry-side cost, full round-trip cost) in price units for one trade.
+
+    Spread + slippage are paid on both fills; commission per lot is converted to
+    price units with an approximate quote->USD rate.
+    """
+    c = pair_cost(symbol, costs_cfg)
+    pip = pip_size(symbol, costs_cfg)
+    side_cost = (c["half_spread_pips"] + c["slippage_pips"]) * pip
+    sym = symbol.upper()
+    quote = INDEX_QUOTE.get(sym, sym[3:6])
+    quote_usd = QUOTE_USD_APPROX.get(quote, 1.0)
+    commission = c["commission_per_lot_usd"] / (contract_size(sym) * quote_usd)
+    return side_cost, 2.0 * side_cost + commission

@@ -17,6 +17,7 @@ dependencies = [
   "dukascopy-python>=4.0",
   "requests>=2.31",
   "tqdm>=4.66",
+  "numba>=0.60",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ trade-backtest = "scripts.run_backtest:main"
 trade-walkforward = "scripts.run_walkforward:main"
 trade-prop = "scripts.run_prop_sim:main"
 trade-all = "scripts.run_all:main"
+trade-rolling-box = "scripts.run_rolling_box:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
