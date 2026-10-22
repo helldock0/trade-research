@@ -29,7 +29,7 @@ from src.config import (
 from src.data.dukascopy_ingest import load_symbol_bars
 from src.data.macro import load_macro_panel
 from src.features.news import load_news_calendar
-from src.research.macro_compare import compare_variants, render_markdown, write_compare_report
+from src.research.macro_compare import compare_variants, render_markdown, variants_universe, write_compare_report
 from src.strategy.macro_swing import generate_signals
 
 
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> None:
     # load the panel and calendar once; every variant and fold reuses them
     gen = partial(generate_signals, macro_panel=panel, news_df=news)
 
-    bars = {s: load_symbol_bars(s, cfg.get("timeframe", "M15")) for s in cfg["universe"]}
+    bars = {s: load_symbol_bars(s, cfg.get("timeframe", "M15")) for s in variants_universe(cfg, names)}
     result = compare_variants(cfg, bars, costs, ftmo, names=names, signal_fn=gen)
     paths = write_compare_report(result, PROJECT_ROOT / "reports", tag=args.tag)
     print(render_markdown(result))

@@ -24,6 +24,13 @@ from src.research.walk_forward import walk_forward
 from src.strategy.registry import resolve_signal_fn
 
 
+def variants_universe(strategy_cfg: dict[str, Any], names: list[str] | None = None) -> list[str]:
+    """Every pair any of the chosen variants trades (bars to load once)."""
+    names = list(names or (strategy_cfg.get("variants") or {}))
+    pairs = [p for n in names for p in variant_config(strategy_cfg, n)["universe"]]
+    return list(dict.fromkeys(p.upper() for p in pairs))
+
+
 def deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
     out = deepcopy(base)
     for k, v in (over or {}).items():
@@ -87,6 +94,8 @@ def run_variant(
     years = span / pd.Timedelta(days=365.25)
     out: dict[str, Any] = {
         "variant": name,
+        "universe": sorted(bars),
+        "traded": sorted({t.symbol for t in full.trades}),
         "n_signals": len(signals),
         "metrics": full.metrics,
         "return_pct_per_year": float(full.metrics.get("total_return_pct", 0.0) / years) if years > 0 else 0.0,
@@ -118,7 +127,14 @@ def compare_variants(
     signal_fn: Callable | None = None,
 ) -> dict[str, Any]:
     names = list(names or (strategy_cfg.get("variants") or {}))
-    rows = [run_variant(n, variant_config(strategy_cfg, n), bars, costs, ftmo, signal_fn) for n in names]
+    rows = []
+    for n in names:
+        cfg = variant_config(strategy_cfg, n)
+        # each variant trades its own universe: the signal derives its currencies from the bars it gets
+        missing = [s for s in cfg["universe"] if s not in bars]
+        if missing:
+            raise ValueError(f"variant {n}: no bars for {missing}")
+        rows.append(run_variant(n, cfg, {s: bars[s] for s in cfg["universe"]}, costs, ftmo, signal_fn))
     return {"strategy": strategy_cfg.get("strategy"), "variants": {n: (strategy_cfg.get("variants") or {})[n] for n in names}, "rows": rows}
 
 

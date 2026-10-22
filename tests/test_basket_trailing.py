@@ -9,7 +9,7 @@ import pytest
 
 from src.backtest.correlation import CorrelationGate, daily_closes
 from src.backtest.engine import run_backtest, trail_stop
-from src.research.macro_compare import compare_variants, deep_merge, max_concurrent, render_markdown, variant_config
+from src.research.macro_compare import compare_variants, deep_merge, max_concurrent, render_markdown, variant_config, variants_universe
 from src.strategy.cssm import Signal
 
 FREE = {"default": {"half_spread_pips": 0.0, "slippage_pips": 0.0, "commission_per_lot_usd": 0.0}, "pairs": {}}
@@ -205,10 +205,17 @@ def test_macro_config_variants_and_compare_end_to_end():
             "signal": {"trigger": "none", "take_profit_r": 0, "trailing_stop_r": 1.0},
             "risk": {"max_open_positions": 2, "max_signed_corr": 0.6},
         },
+        "eur_only": {"extends": "fixed_tp", "universe": ["EURUSD"]},
     }
     res = compare_variants(small, bars, FREE, None, signal_fn=partial(generate_signals, macro_panel=panel))
     rows = {r["variant"]: r for r in res["rows"]}
-    assert set(rows) == {"fixed_tp", "basket"}
+    assert set(rows) == {"fixed_tp", "basket", "eur_only"}
+    # each variant runs on its own universe, not the base config's
+    assert rows["eur_only"]["universe"] == ["EURUSD"] and set(rows["eur_only"]["traded"]) <= {"EURUSD"}
+    assert rows["fixed_tp"]["universe"] == ["EURUSD", "USDJPY"]
+    assert variants_universe({**small, "variants": {"w": {"universe": ["EURUSD", "AUDJPY"]}}}) == ["EURUSD", "AUDJPY"]
+    with pytest.raises(ValueError, match="no bars"):
+        compare_variants({**small, "variants": {"w": {"universe": ["EURUSD", "AUDJPY"]}}}, bars, FREE, None, signal_fn=partial(generate_signals, macro_panel=panel))
     assert rows["fixed_tp"]["n_signals"] > 0
     assert rows["basket"]["n_signals"] >= rows["fixed_tp"]["n_signals"]
     assert rows["fixed_tp"]["max_concurrent"] <= 1
