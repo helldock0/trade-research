@@ -124,3 +124,78 @@ def test_engine_charges_index_financing_over_calendar_time_only_where_configured
     t1 = run_backtest([sig], bars, cfg, {**free, "financing_pct_per_year": {"NAS100": 6.0}}).trades[0]
     notional = 20000.0 * t1.lots * 1.0
     assert t1.pnl_usd == pytest.approx(-notional * 0.06 * 3 / 365, rel=1e-6)  # 3 calendar days, weekend included
+
+
+# ----------------------------------------------------------------- basket across indices
+
+
+def test_yahoo_chart_parser_dates_in_exchange_time():
+    import json
+
+    from src.data.macro import parse_yahoo_chart
+
+    # 2024-01-02 23:30 UTC is already 2024-01-03 in Tokyo
+    text = json.dumps({"chart": {"result": [{"meta": {"exchangeTimezoneName": "Asia/Tokyo"},
+                                             "timestamp": [1704238200, 1704324600],
+                                             "indicators": {"quote": [{"close": [33464.17, None]}]}}]}})
+    s = parse_yahoo_chart(text, "YH_N225")
+    assert len(s) == 1 and s.index[0] == pd.Timestamp("2024-01-03", tz="UTC") and s.iloc[0] == pytest.approx(33464.17)
+    with pytest.raises(ValueError):
+        parse_yahoo_chart(json.dumps({"chart": {"result": []}}))
+
+
+def test_non_usd_index_trade_converts_through_the_fx_major():
+    from src.backtest.costs import contract_currency, contract_size
+    from src.backtest.engine import run_backtest
+    from src.strategy.cssm import Signal
+
+    costs = {"default": {"half_spread_pips": 0.0, "slippage_pips": 0.0, "commission_per_lot_usd": 0.0}, "pairs": {},
+             "pip_size": {"GER40": 1.0}, "contracts": {"GER40": {"size": 1.0, "ccy": "EUR"}, "NAS100": 1.0}}
+    assert contract_size("GER40", costs) == 1.0 and contract_currency("GER40", costs) == "EUR"
+    assert contract_size("NAS100", costs) == 1.0 and contract_currency("NAS100", costs) is None
+    idx = pd.date_range("2024-03-04 09:00", periods=6, freq="15min", tz="UTC")
+    ger = pd.DataFrame({"timestamp": idx, "open": 18000.0, "high": 18010.0, "low": [17990, 17990, 17700, 17690, 17690, 17690], "close": 18000.0, "volume": 1.0})
+    eur = pd.DataFrame({"timestamp": idx, "open": 1.10, "high": 1.10, "low": 1.10, "close": 1.10, "volume": 1.0})
+    cfg = {"risk": {"risk_per_trade_pct": 0.5, "max_open_positions": 1, "soft_daily_halt_pct": 50.0},
+           "sessions": {"london_end": "11:00", "ny_end": "16:00"},
+           "signal": {"exit_mode": "swing", "take_profit_r": 0, "breakeven_at_r": 0.0, "allow_weekend_hold": True}}
+    sig = Signal(idx[0], "GER40", 1, 18000.0, 17750.0, float("nan"), 250.0, "dip", 18250.0, 17750.0, "t")
+    t = run_backtest([sig], {"GER40": ger, "EURUSD": eur}, cfg, costs).trades[0]
+    assert t.exit_reason == "stop" and t.r_multiple == pytest.approx(-1.0, abs=0.01)
+    with pytest.raises(ValueError, match="convert"):
+        run_backtest([sig], {"GER40": ger}, cfg, costs)
+
+
+def test_dip_basket_signals_use_each_index_close_and_skip_conversion_pairs():
+    px = _dip_path(n_up=50, slope=0.4, drop=0.6, after=list(np.linspace(118.5, 125, 18)))
+    days = pd.bdate_range("2024-01-02", periods=len(px))
+
+    def bars_at(tz: str, hhmm: str) -> pd.DataFrame:
+        hh, mm = map(int, hhmm.split(":"))
+        rows = []
+        for d, p in zip(days, px):
+            for k in (30, 15):
+                ts = (pd.Timestamp(d.date()).replace(hour=hh, minute=mm) - pd.Timedelta(minutes=k)).tz_localize(tz).tz_convert("UTC")
+                rows.append((ts, p, p + 0.3, p - 0.3, p))
+        return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"]).assign(volume=1.0)
+
+    bars = {"GER40": bars_at("Europe/Berlin", "17:30"), "NAS100": bars_at("America/New_York", "16:00"), "EURUSD": bars_at("Europe/London", "12:00")}
+    cfg = {"universe": ["GER40", "NAS100"], "signal": SIG,
+           "sessions": {"exchange_tz": "America/New_York", "cash_close": "16:00", "per_symbol": {"GER40": {"exchange_tz": "Europe/Berlin", "cash_close": "17:30"}}}}
+    sigs = generate_signals(bars, cfg, COSTS, calendar=pd.DatetimeIndex(days))
+    assert {s.symbol for s in sigs} == {"GER40", "NAS100"}                          # EURUSD is never traded
+    ger = [s for s in sigs if s.symbol == "GER40"]
+    assert all(s.timestamp.tz_convert("Europe/Berlin").strftime("%H:%M") == "17:15" for s in ger)
+
+
+def test_basket_inclusion_rule_and_conversion_pairs_in_the_runner():
+    from src.research.dip_check import render_basket_markdown, run_basket_check
+    from src.research.macro_compare import variants_universe
+
+    cfg = _cfg(round_trip_cost_bp=2.0)
+    cfg["validation"]["history"] = {"GOOD": "A", "BAD": "B", "GONE": "C"}
+    res = run_basket_check({"A": _series(2, 0.008), "B": _series(4, -0.008)}, cfg, COSTS)
+    assert res["included"] == ["GOOD"]
+    assert "**Included: GOOD**" in render_basket_markdown(res, cfg)
+    vcfg = {"universe": ["GER40"], "conversion_pairs": ["EURUSD"], "variants": {"a": {}, "b": {"universe": ["UK100"]}}}
+    assert variants_universe(vcfg) == ["GER40", "EURUSD", "UK100"]

@@ -3,9 +3,10 @@
     python scripts/bars_from_data_branch.py                       # the macro_swing universe (+ variants)
     python scripts/bars_from_data_branch.py --pairs EURUSD,EURJPY --force
 
-USD pairs: the branch's M5 BID bars resampled to M15. Crosses (no USD leg): built
-minute by minute from the M1 BID bars of their two USD legs, then resampled to
-M15. Only the needed LFS objects are pulled into a worktree under data/.
+USD pairs and index CFDs: the branch's M5 BID bars (M1 where there is no M5)
+resampled to M15. Crosses (no USD leg): built minute by minute from the M1 BID
+bars of their two USD legs, then resampled to M15. Only the needed LFS objects
+are pulled into a worktree under data/.
 """
 
 from __future__ import annotations
@@ -53,12 +54,17 @@ def main(argv: list[str] | None = None) -> None:
     if not todo:
         print("All M15 files exist; use --force to rebuild.")
         return
-    files = sorted({f"parquet/{p}_M5.parquet" for p in todo if not is_cross(p)} | {f"parquet/{leg}_M1.parquet" for p in todo if is_cross(p) for leg in _legs(p)})
-
     wt = ROOT / "data" / "_data_branch"
     if not wt.exists():
         subprocess.run(["git", "fetch", "origin", args.branch.split("/", 1)[-1]], cwd=ROOT, check=True)
         subprocess.run(["git", "worktree", "add", "--detach", str(wt), args.branch], cwd=ROOT, check=True, env={**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"})
+    listed = set(subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD"], cwd=wt, check=True, capture_output=True, text=True).stdout.split())
+
+    def source(pair: str) -> str:
+        m5 = f"parquet/{pair}_M5.parquet"
+        return m5 if m5 in listed else f"parquet/{pair}_M1.parquet"
+
+    files = sorted({source(p) for p in todo if not is_cross(p)} | {f"parquet/{leg}_M1.parquet" for p in todo if is_cross(p) for leg in _legs(p)})
     subprocess.run(["git", "lfs", "pull", f"--include={','.join(files)}"], cwd=wt, check=True)
 
     for pair in todo:
@@ -66,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
             legs = {leg: load_parquet(wt / "parquet" / f"{leg}_M1.parquet") for leg in _legs(pair)}
             m15 = resample_ohlc(cross_bars(pair, legs), "15min")
         else:
-            m15 = resample_ohlc(load_parquet(wt / "parquet" / f"{pair}_M5.parquet"), "15min")
+            m15 = resample_ohlc(load_parquet(wt / source(pair)), "15min")
         m15 = m15.rename_axis("timestamp").reset_index()
         save_parquet(m15, out_dir / f"{pair}_M15.parquet")
         print(f"{pair}: {len(m15)} M15 bars {m15['timestamp'].min()} -> {m15['timestamp'].max()}")

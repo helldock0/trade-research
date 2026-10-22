@@ -2,8 +2,10 @@
 
 Long at the cash close; exit at the first close above the exit average or after
 `max_days` trading days; one position per index (no new entry until the
-previous trade has closed). `dip_trades` works on any daily close series, so
-the FRED signal check and the bar strategy trade exactly the same rules.
+previous trade has closed). Each index can use its own exchange time zone,
+cash close and trading calendar (`sessions.per_symbol`). `dip_trades` works on
+any daily close series, so the signal check on daily history and the bar
+strategy trade exactly the same rules.
 """
 
 from __future__ import annotations
@@ -59,16 +61,21 @@ def generate_signals(
 ) -> list[Signal]:
     sig = strategy_cfg["signal"]
     sess_cfg = strategy_cfg.get("sessions", {}) or {}
-    tz = str(sess_cfg.get("exchange_tz", "America/New_York"))
-    close_t = str(sess_cfg.get("cash_close", "16:00"))
+    per_symbol = {str(k).upper(): v or {} for k, v in (sess_cfg.get("per_symbol") or {}).items()}
+    # only the universe is traded; other bars (FX pairs for P&L conversion) are left alone
+    universe = {s.upper() for s in (strategy_cfg.get("universe") or bars_by_symbol)}
     stop_mult = float(sig.get("stop_atr_mult", 2.5))
     n_atr = int(sig.get("atr_period", 20))
     signals: list[Signal] = []
     for sym, df in bars_by_symbol.items():
-        if df is None or len(df) == 0:
+        if df is None or len(df) == 0 or sym.upper() not in universe:
             continue
+        ps = per_symbol.get(sym.upper(), {})
+        tz = str(ps.get("exchange_tz", sess_cfg.get("exchange_tz", "America/New_York")))
+        close_t = str(ps.get("cash_close", sess_cfg.get("cash_close", "16:00")))
         sessions = cash_sessions(df, tz, close_t)
-        days = calendar if calendar is not None else trading_calendar(strategy_cfg, sessions)
+        cal_name = ps.get("calendar_series", sig.get("calendar_series", "NASDAQ100"))
+        days = calendar if calendar is not None else trading_calendar({"signal": {"calendar_series": cal_name}}, sessions)
         daily = sessions.reindex(pd.DatetimeIndex(days)).dropna(subset=["close"])
         # ATR through the previous session: known before the entry close
         a = atr(daily["high"], daily["low"], daily["close"], period=n_atr).shift(1)

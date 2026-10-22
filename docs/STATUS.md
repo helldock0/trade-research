@@ -27,9 +27,11 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | `dip` | Buy the dip in an uptrend on US index CFDs (RSI(2) < 10 above the 200-day average; out above the 5-day average or after 10 days). The signal check passes on 2000–2017 (+0.45% per trade over holding, t 2.29) but only after a cost-scaling fix (t 1.74 before). On 2018+ bars: 67 trades, win 0.73, PF 2.21, max DD 1.1%, but OOS +0.098R and about 8 trades a year, so Monte Carlo 0.00. See "Buy the dip" below. | NO-GO (gates); real but thin edge |
 
+| `dip` basket | The same dip rule across indices (owner request). Pre-registered inclusion on each index's own daily history admits only NAS100, US500 and US30; US2000, GER40, UK100 and JP225 fail. Basket with a 0.7 correlation gate: 127 trades, win 0.71, max DD 1.7%, 12/14 OOS folds positive, but OOS +0.083R and Monte Carlo 0.00. See "Buy the dip: more indices" below. | NO-GO (gates) |
+
 ## Active
 
-None. The fundamentals lines, turn of the month, intraday momentum and buy-the-dip are all rejected by the gates (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
+None. The fundamentals lines, turn of the month, intraday momentum and buy-the-dip (single index and basket) are all rejected by the gates (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -317,6 +319,47 @@ By decade (NASDAQ-100 excess): 2000s +0.87% (t 2.63), 2010s +0.07% (t 0.34), 202
 
 Open question for the owner: whether this edge is worth trading at a higher risk per trade, or across more indices (GER40, UK100, JP225 on the data branch need currency conversion). That is a sizing / gate decision, not a reason to retune the rules. Any change needs its own pre-registered check, since the holdout already passed only after the cost fix.
 
+### Buy the dip: more indices (2026-10-22, owner request)
+
+Everything was fixed in `configs/strategy_dip_basket.yaml` before any of the new indices' data was looked at:
+- **Rule 1, inclusion.** An index joins the basket if its own daily history beats holding (mean excess > 0) on both the 2000–2017 holdout and 2018+. Costs are the same as before: 2 bp round trip and 6% a year financing.
+- **Rule 2, basket.** Up to 4 positions at 0.5% each. A new trade is skipped if its 60-day return correlation with an open one is above 0.7.
+- **Rule 3, decision.** The `basket` row must clear the gates.
+
+New plumbing:
+- Daily histories come from FRED or Yahoo Finance (new `yahoo` source in `src.data.macro`). Stooq is blocked from the cloud.
+- Each index decides at its own exchange's cash close and calendar (`sessions.per_symbol`).
+- EUR / GBP / JPY index P&L converts through EURUSD / GBPUSD / USDJPY (`contracts: {size, ccy}` in costs.yaml). The FX pairs are loaded as `conversion_pairs` and never traded.
+- Spreads at each close come from the data branch's ask files: GER40 1.4, UK100 1.0, JP225 7.1 points. US2000 has no ask file, so its cost is a conservative guess.
+- `scripts/bars_from_data_branch.py` falls back to M1 where the branch has no M5 file (US2000).
+
+`python scripts/run_dip_basket_check.py` → `reports/dip_basket_check.md`:
+
+| Index | History | Holdout excess % (t) | Dev excess % (t) | Included |
+|---|---|---|---|---|
+| NAS100 | FRED NASDAQ100 | 0.45 (2.29) | 0.25 (1.18) | yes |
+| US500 | Yahoo ^GSPC | 0.19 (1.06) | 0.20 (1.11) | yes |
+| US30 | Yahoo ^DJI | 0.14 (0.88) | 0.08 (0.40) | yes |
+| US2000 | Yahoo ^RUT | 0.21 (1.01) | −0.03 (−0.11) | no |
+| GER40 | Yahoo ^GDAXI | −0.16 (−0.64) | −0.06 (−0.19) | no |
+| UK100 | Yahoo ^FTSE | 0.46 (4.19) | −0.26 (−1.16) | no |
+| JP225 | FRED NIKKEI225 | −0.25 (−0.88) | 0.54 (1.98) | no |
+
+The rule worked on the large US indices in both eras. Outside the US it held in only one era each: the FTSE strongly before 2018 and not since, the Nikkei only since 2018. So the basket is three highly correlated US indices.
+
+`python scripts/run_variants.py --config strategy_dip_basket.yaml --stem dip_basket_compare`:
+
+| Variant | Trades | Exp R | PF | Win | Max DD | Return / yr | OOS exp R | Folds + | MC success | FTMO path | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `basket` (decision) | 127 | 0.146 | 1.94 | 0.71 | 1.7% | 1.05% | 0.083 | 12/14 | 0.00 | +9.2%, target not reached | NO-GO |
+| `basket_nogate` (info) | 207 | 0.135 | 1.80 | 0.71 | 3.1% | 1.59% | 0.091 | 11/14 | 0.67 | phase 1 passed, phase 2 failed | NO-GO |
+
+**Verdict: NO-GO by the gates.**
+- The basket roughly doubles NAS100's trade count and stays very steady: 12 of 14 OOS folds are profitable and the max drawdown is 1.7%.
+- The OOS edge is still about 0.08R a trade, and at 0.5% risk it makes about 1% a year.
+- Without the correlation gate it stacks the same US dip up to 3 times.
+- More indices do not fix the size problem, because the indices that pass all move together.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -327,5 +370,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
 5. Turn of the month is NO-GO; the decade table shows the calendar effect has faded since the 2010s.
 5b. Intraday momentum is NO-GO: below costs before 2022, gone after. `scripts/run_variants.py` runs any config's `variants:`.
-5c. Buy the dip is NO-GO by the gates but has a real, thin edge. It is the best candidate if the owner revisits risk sizing or adds more indices.
+5c. Buy the dip is NO-GO by the gates but has a real, thin edge. More indices were tried: only US ones pass, so the basket is about one bet. The remaining lever is risk sizing, which is the owner's call.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

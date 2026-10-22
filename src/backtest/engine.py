@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.backtest.costs import (
     commission_usd,
+    contract_currency,
     contract_size,
     entry_fill_price,
     financing_pct,
@@ -157,8 +158,11 @@ def run_backtest(
     closes = {s: b["close"] for s, b in bars.items()}
 
     def quote_usd(sym: str, at: pd.Timestamp) -> float | None:
-        # crosses convert their quote-currency P&L through the USD major; other pairs keep the fixed formulas
-        return usd_per_unit(sym.upper()[3:6], at, closes) if is_cross(sym) else None
+        # crosses and non-USD index CFDs convert their P&L through the USD major; other pairs keep the fixed formulas
+        if is_cross(sym):
+            return usd_per_unit(sym.upper()[3:6], at, closes)
+        ccy = contract_currency(sym, costs_cfg)
+        return usd_per_unit(ccy, at, closes) if ccy and ccy != "USD" else None
 
     balance = initial_balance
     equity = initial_balance

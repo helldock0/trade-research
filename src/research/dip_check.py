@@ -109,6 +109,45 @@ def run_dip_check(series: dict[str, pd.Series], cfg: dict[str, Any], costs_cfg: 
     }
 
 
+def run_basket_check(history: dict[str, pd.Series], cfg: dict[str, Any], costs_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Per-index inclusion: mean excess > 0 on both the holdout and the dev window of its own daily history."""
+    val = cfg["validation"]
+    rows = []
+    for sym, name in val["history"].items():
+        s = history.get(name)
+        if s is None or s.empty:
+            rows.append({"symbol": sym, "series": name, "missing": True, "include": False})
+            continue
+        tr, up = trade_table(s, cfg, costs_cfg)
+        row: dict[str, Any] = {"symbol": sym, "series": name, "first": str(pd.Timestamp(s.index.min()).date()), "missing": False}
+        for label in ("context", "holdout", "dev"):
+            row[label] = window_stats(tr, up, *val[label])
+        row["include"] = bool(row["holdout"]["mean_excess_pct"] > 0 and row["dev"]["mean_excess_pct"] > 0)
+        rows.append(row)
+    return {"rows": rows, "included": [r["symbol"] for r in rows if r["include"]]}
+
+
+def render_basket_markdown(res: dict[str, Any], cfg: dict[str, Any]) -> str:
+    val = cfg["validation"]
+    lines = ["# Buy-the-dip basket: per-index inclusion check (daily history)", ""]
+    lines.append(f"- holdout {val['holdout']} · dev {val['dev']} · cost {val.get('round_trip_cost_bp')} bp round trip · financing {val.get('financing_pct_per_year')}% a year")
+    lines.append("- rule (fixed before the run): an index joins the basket if its mean excess over holding is > 0 on both windows")
+    lines += ["", f"**Included: {', '.join(res['included']) or 'none'}**", ""]
+    lines.append("| index | history | since | holdout trades | holdout excess % | t | dev trades | dev excess % | t | dev hit | include |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    for r in res["rows"]:
+        if r.get("missing"):
+            lines.append(f"| {r['symbol']} | {r['series']} | missing | | | | | | | | no |")
+            continue
+        h, d = r["holdout"], r["dev"]
+        lines.append(
+            f"| {r['symbol']} | {r['series']} | {r['first']} | {h['n']} | {_f(h['mean_excess_pct'])} | {_f(h['t'])} | "
+            f"{d['n']} | {_f(d['mean_excess_pct'])} | {_f(d['t'])} | {_f(d['hit'])} | {'**yes**' if r['include'] else 'no'} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _f(x: Any, nd: int = 2) -> str:
     if x is None or (isinstance(x, float) and math.isnan(x)):
         return "—"

@@ -75,6 +75,9 @@ python scripts/run_variants.py --config strategy_imom.yaml --stem imom_compare
 # 1h) Buy the dip in an uptrend on index CFDs: FRED signal check, then the engine
 python scripts/run_dip_check.py
 python scripts/run_variants.py --config strategy_dip.yaml --stem dip_compare
+python scripts/bars_from_data_branch.py --pairs US500,US30,US2000,GER40,UK100,JP225,EURUSD,GBPUSD,USDJPY
+python scripts/run_dip_basket_check.py      # per-index inclusion on daily history (FRED / Yahoo)
+python scripts/run_variants.py --config strategy_dip_basket.yaml --stem dip_basket_compare
 
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py

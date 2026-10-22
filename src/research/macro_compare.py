@@ -27,7 +27,7 @@ from src.strategy.registry import resolve_signal_fn
 def variants_universe(strategy_cfg: dict[str, Any], names: list[str] | None = None) -> list[str]:
     """Every pair any of the chosen variants trades (bars to load once)."""
     names = list(names or (strategy_cfg.get("variants") or {}))
-    pairs = [p for n in names for p in variant_config(strategy_cfg, n)["universe"]]
+    pairs = [p for n in names for c in [variant_config(strategy_cfg, n)] for p in [*c["universe"], *(c.get("conversion_pairs") or [])]]
     return list(dict.fromkeys(p.upper() for p in pairs))
 
 
@@ -94,7 +94,7 @@ def run_variant(
     years = span / pd.Timedelta(days=365.25)
     out: dict[str, Any] = {
         "variant": name,
-        "universe": sorted(bars),
+        "universe": sorted(cfg.get("universe") or bars),
         "traded": sorted({t.symbol for t in full.trades}),
         "n_signals": len(signals),
         "metrics": full.metrics,
@@ -130,11 +130,13 @@ def compare_variants(
     rows = []
     for n in names:
         cfg = variant_config(strategy_cfg, n)
-        # each variant trades its own universe: the signal derives its currencies from the bars it gets
-        missing = [s for s in cfg["universe"] if s not in bars]
+        # each variant trades its own universe: the signal derives its currencies from the bars it gets;
+        # `conversion_pairs` ride along so the engine can convert non-USD P&L
+        need = [*cfg["universe"], *(cfg.get("conversion_pairs") or [])]
+        missing = [s for s in need if s not in bars]
         if missing:
             raise ValueError(f"variant {n}: no bars for {missing}")
-        rows.append(run_variant(n, cfg, {s: bars[s] for s in cfg["universe"]}, costs, ftmo, signal_fn))
+        rows.append(run_variant(n, cfg, {s: bars[s] for s in dict.fromkeys(need)}, costs, ftmo, signal_fn))
     return {"strategy": strategy_cfg.get("strategy"), "variants": {n: (strategy_cfg.get("variants") or {})[n] for n in names}, "rows": rows}
 
 

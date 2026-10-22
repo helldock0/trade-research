@@ -1,0 +1,78 @@
+strategy: dip
+
+# Buy-the-dip basket across index CFDs (owner request after the NAS100 run):
+# the same rule as configs/strategy_dip.yaml on more indices, for more trades.
+# Fixed on 2026-10-22, before any of the new indices' data was looked at:
+#  1. Inclusion (scripts/run_dip_basket_check.py): an index joins the basket only
+#     if its own daily history shows mean excess > 0 on the 2000-2017 holdout AND
+#     on 2018+, with the same costs (2 bp round trip, 6% a year financing).
+#  2. Basket: up to 4 positions at 0.5% risk each, one per index. A new trade is
+#     skipped when its 60-day daily-return correlation with an open one, signed
+#     by both sides, is above 0.7: two US indices dipping together are one bet.
+#  3. Decision: the `basket` variant must clear the promotion gates.
+# `universe` holds the indices that pass rule 1 (set mechanically from
+# reports/dip_basket_check.md); `candidates` lists everything that was tested.
+candidates: [NAS100, US500, US30, US2000, GER40, UK100, JP225]
+universe: [NAS100, US500, US30]   # rule 1 result (2026-10-22): US2000, GER40, UK100, JP225 failed
+conversion_pairs: [EURUSD, GBPUSD, USDJPY]   # loaded to convert EUR / GBP / JPY P&L, never traded
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  exchange_tz: America/New_York
+  cash_close: "16:00"
+  per_symbol:                # each index decides at its own exchange's cash close, on its own calendar
+    GER40: {exchange_tz: Europe/Berlin, cash_close: "17:30", calendar_series: YH_GDAXI}
+    UK100: {exchange_tz: Europe/London, cash_close: "16:30", calendar_series: YH_FTSE}
+    JP225: {exchange_tz: Asia/Tokyo, cash_close: "15:00", calendar_series: NIKKEI225}
+
+signal:
+  trend_sma: 200
+  rsi_period: 2
+  rsi_entry: 10
+  exit_sma: 5
+  max_days: 10
+  calendar_series: NASDAQ100 # US indices
+  atr_period: 20
+  stop_atr_mult: 2.5
+  take_profit_r: 0
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 4
+  max_signed_corr: 0.7
+  corr_window_days: 60
+  soft_daily_halt_pct: 2.0
+
+validation:
+  history:                   # index -> daily close series (FRED id, or YH_* fetched from Yahoo)
+    NAS100: NASDAQ100
+    US500: YH_GSPC
+    US30: YH_DJI
+    US2000: YH_RUT
+    GER40: YH_GDAXI
+    UK100: YH_FTSE
+    JP225: NIKKEI225
+  yahoo: {YH_GSPC: "^GSPC", YH_DJI: "^DJI", YH_RUT: "^RUT", YH_GDAXI: "^GDAXI", YH_FTSE: "^FTSE"}
+  holdout: ["2000-01-01", "2017-12-31"]
+  dev: ["2018-01-01", null]
+  context: [null, "1999-12-31"]
+  financing_pct_per_year: 6.0
+  round_trip_cost_bp: 2.0
+
+variants:
+  basket: {}
+  basket_nogate:             # information only: every index may be open at once
+    risk: {max_open_positions: 7, max_signed_corr: null}
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

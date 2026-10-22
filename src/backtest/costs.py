@@ -66,12 +66,20 @@ def is_cross(symbol: str) -> bool:
 
 
 def contract_size(symbol: str, costs_cfg: dict[str, Any]) -> float | None:
-    """Units per lot for instruments under `contracts:` in costs.yaml (USD index CFDs: $ per point per lot).
+    """Units per lot for instruments under `contracts:` in costs.yaml (index CFDs: currency units per point per lot).
 
-    None means the FX / gold defaults (100k units, 100 oz).
+    An entry is a number (USD) or {size, ccy}. None means the FX / gold defaults (100k units, 100 oz).
     """
     v = (costs_cfg.get("contracts") or {}).get(symbol.upper())
-    return float(v) if v is not None else None
+    if v is None:
+        return None
+    return float(v["size"]) if isinstance(v, dict) else float(v)
+
+
+def contract_currency(symbol: str, costs_cfg: dict[str, Any]) -> str | None:
+    """P&L currency of a `contracts:` entry ({size, ccy}); None for plain (USD) entries and FX."""
+    v = (costs_cfg.get("contracts") or {}).get(symbol.upper())
+    return str(v.get("ccy", "USD")).upper() if isinstance(v, dict) else None
 
 
 def financing_pct(symbol: str, costs_cfg: dict[str, Any]) -> float | None:

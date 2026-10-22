@@ -11,6 +11,7 @@ Each series is cached at data/macro/{name}.csv with columns date,value. Sources:
     cftc_tff    CFTC Traders in Financial Futures yearly zips (market substring) ->
                 leveraged-money net position as a share of open interest
     snb         Swiss National Bank data portal cube CSV (cube, dims: {column: value})
+    yahoo       Yahoo Finance daily chart JSON (symbol, e.g. ^GDAXI): closes dated in the exchange's time zone
     csv         local drop-in file (path) with date,value columns
 
 Parsers are pure functions over text so they can be unit-tested offline.
@@ -46,6 +47,7 @@ BOE_URL = (
 BIS_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.{area}?format=csv&startPeriod={start}"
 CFTC_TFF_URL = "https://www.cftc.gov/files/dea/history/fut_fin_txt_{year}.zip"
 SNB_URL = "https://data.snb.ch/api/cube/{cube}/data/csv/en"
+YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?period1=0&period2={end}&interval=1d"
 
 
 # ----------------------------------------------------------------- helpers
@@ -186,6 +188,21 @@ def parse_snb_csv(text: str, dims: dict[str, str], name: str = "snb") -> pd.Seri
     return _series(df["Date"], df["Value"], name)
 
 
+def parse_yahoo_chart(text: str, name: str = "yahoo") -> pd.Series:
+    """Daily closes from a Yahoo chart response, dated in the exchange's own time zone."""
+    import json
+
+    res = (json.loads(text).get("chart") or {}).get("result") or []
+    if not res:
+        raise ValueError("Yahoo chart: empty result")
+    r = res[0]
+    tz = (r.get("meta") or {}).get("exchangeTimezoneName") or "UTC"
+    ts = pd.to_datetime(pd.Series(r.get("timestamp") or [], dtype="int64"), unit="s", utc=True)
+    dates = ts.dt.tz_convert(tz).dt.tz_localize(None).dt.normalize()
+    close = ((r.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
+    return _series(dates, close, name)
+
+
 def parse_local_csv(text: str, name: str = "csv") -> pd.Series:
     df = pd.read_csv(io.StringIO(text))
     return _series(df.iloc[:, 0], df.iloc[:, 1], name)
@@ -247,6 +264,11 @@ def fetch_series(spec: dict[str, Any], name: str, start: str = "2010-01-01") -> 
             return pd.Series(dtype=float, name=name)
         s = pd.concat(parts)
         return s[~s.index.duplicated(keep="last")].sort_index()
+    if src == "yahoo":
+        from urllib.parse import quote
+
+        url = YAHOO_URL.format(symbol=quote(str(spec["symbol"]), safe=""), end=int(time.time()) + 86400)
+        return parse_yahoo_chart(_get(url).decode("utf-8"), name)
     if src == "snb":
         return parse_snb_csv(_get(SNB_URL.format(cube=spec["cube"])).decode("utf-8-sig", errors="replace"), spec.get("dims") or {}, name)
     if src == "csv":

@@ -23,6 +23,8 @@ from the repo's `data` branch (Git LFS M5 BID bars from 2018; crosses built from
   (`src.data.macro` has one parser per source; `--show` prints the live score table).
 - FRED daily FX for the macro IC check: `data/macro/fx_{PAIR}.csv`, fetched and used by
   `python scripts/run_macro_ic.py` (`src.research.macro_ic`). No price bars needed.
+- Daily index histories for signal checks (`run_tom_check.py`, `run_dip_check.py`, `run_dip_basket_check.py`):
+  `data/macro/{NAME}.csv`, FRED ids or `YH_*` names fetched from Yahoo Finance (stooq is blocked from the cloud).
 - The same calendar CSV drives the news blackout (`src.features.news`) and the event study
   (`src.strategy.event_drift`, `src.research.event_study`).
 - Signals must stay point-in-time: anything used before a release comes from releases strictly before it.
