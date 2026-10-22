@@ -3,6 +3,7 @@
 Example:
     python scripts/run_rolling_box.py --workers 4
     python scripts/run_rolling_box.py --symbols EURUSD,XAUUSD,US30
+    python scripts/run_rolling_box.py --config strategy_rolling_box_ema.yaml --out reports/rolling_box_ema
 """
 
 from __future__ import annotations
@@ -22,13 +23,7 @@ from src.config import ROOT as PROJECT_ROOT
 from src.config import ensure_dirs, load_costs_config, load_strategy_config
 from src.research.box_sweep import add_metrics, config_table, portfolio_summary, run_sweep
 
-SHOW_COLS = [
-    "confirm_tf",
-    "window",
-    "stop",
-    "exit",
-    "concurrency",
-    "min_risk_cost",
+METRIC_COLS = [
     "n",
     "exp_r_is",
     "exp_r_oos",
@@ -69,6 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     configs = config_table(cfg)
+    show = [c for c in configs.columns if c != "cfg_id"] + METRIC_COLS
     print(f"[sweep] {len(symbols)} symbols x {len(configs)} configs", flush=True)
     summary, by_hour, by_year, missing = run_sweep(symbols, cfg, costs, cache_dir, args.workers)
 
@@ -83,12 +79,12 @@ def main(argv: list[str] | None = None) -> None:
     ranked = portfolio.loc[portfolio["n_is"] >= args.min_trades_is].sort_values("exp_r_is", ascending=False)
     with pd.option_context("display.width", 200, "display.max_columns", 20):
         print("\nTop configs, all symbols pooled (ranked in-sample, OOS alongside):")
-        print(ranked[SHOW_COLS].head(args.top).round(3).to_string(index=False))
+        print(ranked[show].head(args.top).round(3).to_string(index=False))
 
         per_symbol = summary.loc[summary["n_is"] >= args.min_trades_is]
         best = per_symbol.sort_values("exp_r_is", ascending=False).groupby("symbol").head(1)
         print("\nBest in-sample config per symbol:")
-        print(best[["symbol"] + SHOW_COLS].round(3).to_string(index=False))
+        print(best[["symbol"] + show].round(3).to_string(index=False))
 
     meta = {
         "config": args.config,

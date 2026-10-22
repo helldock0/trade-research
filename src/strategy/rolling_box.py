@@ -12,6 +12,8 @@ Exit specs:  ``tp:R`` (fixed target), ``time:N`` (close N minutes after entry),
              ``session`` (hold to session end), ``trail_r:A:D`` (once +A R,
              trail D R behind the best price), ``trail_atr:K`` (trail K x ATR
              behind the best price from entry).
+EMA specs:   ``none`` or ``<tf>:<period>`` (e.g. ``m15:50``, ``h1:200``). The box
+             close above the EMA allows only longs, below it only shorts.
 """
 
 from __future__ import annotations
@@ -116,6 +118,7 @@ def build_boxes(
             "box_end": start + box_minutes,
             "high": b["high"].to_numpy(np.float64),
             "low": b["low"].to_numpy(np.float64),
+            "close": b["close"].to_numpy(np.float64),
             "atr": b["atr"].to_numpy(np.float64),
             "sess_end": day0 + end_min,
             "hour_utc": b.index.hour.to_numpy(),
@@ -132,11 +135,14 @@ def confirm_candles(m1: pd.DataFrame, minutes: int) -> tuple[np.ndarray, np.ndar
 
 
 @njit(cache=True)
-def first_breakouts(box_end, box_hi, box_lo, sess_end, c_start, c_close, c_minutes, max_window):
+def first_breakouts(
+    box_end, box_hi, box_lo, sess_end, c_start, c_close, c_minutes, max_window, allow_long, allow_short
+):
     """First confirmation close beyond each box within ``max_window`` minutes.
 
     Returns (side, entry_t, entry_px); side 0 means no breakout. The entry
-    candle must close strictly before the session end.
+    candle must close strictly before the session end. Closes beyond a side
+    that is not allowed are ignored and the scan continues.
     """
     n = box_end.shape[0]
     nc = c_start.shape[0]
@@ -147,16 +153,16 @@ def first_breakouts(box_end, box_hi, box_lo, sess_end, c_start, c_close, c_minut
     for b in range(n):
         while j < nc and c_start[j] < box_end[b]:
             j += 1
-        if box_hi[b] <= box_lo[b]:
+        if box_hi[b] <= box_lo[b] or not (allow_long[b] or allow_short[b]):
             continue
         k = j
         while k < nc:
             cend = c_start[k] + c_minutes
             if cend > box_end[b] + max_window or cend >= sess_end[b]:
                 break
-            if c_close[k] > box_hi[b]:
+            if allow_long[b] and c_close[k] > box_hi[b]:
                 side[b] = 1
-            elif c_close[k] < box_lo[b]:
+            elif allow_short[b] and c_close[k] < box_lo[b]:
                 side[b] = -1
             if side[b] != 0:
                 entry_t[b] = cend
@@ -290,6 +296,18 @@ def one_at_a_time(entry_t, exit_t, mask):
 
 
 @njit(cache=True)
+def first_per_day(day, mask):
+    """Keep only the first allowed trade of each day (inputs sorted by entry time)."""
+    keep = np.zeros(day.shape[0], np.bool_)
+    last_day = np.int64(-1)
+    for i in range(day.shape[0]):
+        if mask[i] and day[i] != last_day:
+            keep[i] = True
+            last_day = day[i]
+    return keep
+
+
+@njit(cache=True)
 def max_drawdown(r):
     """Peak-to-trough drop of the cumulative R curve (positive number)."""
     peak = 0.0
@@ -304,15 +322,53 @@ def max_drawdown(r):
     return dd
 
 
+EMA_TIMEFRAMES = {"m1": 1, "m5": 5, "m15": 15, "m30": 30, "h1": 60, "h4": 240}
+
+
+def parse_ema(spec: str) -> tuple[int, int] | None:
+    """``none`` -> None; ``h1:200`` -> (60, 200) as (timeframe minutes, period)."""
+    s = spec.strip().lower()
+    if s == "none":
+        return None
+    tf, period = s.split(":")
+    if tf not in EMA_TIMEFRAMES:
+        raise ValueError(f"Unknown EMA timeframe in spec: {spec}")
+    return EMA_TIMEFRAMES[tf], int(period)
+
+
+def ema_at_boxes(m1: pd.DataFrame, boxes: pd.DataFrame, tf_minutes: int, period: int) -> np.ndarray:
+    """EMA of the last bar that has closed by each box's close (NaN during warm-up)."""
+    bars = resample_ohlc(m1, f"{tf_minutes}min")
+    ema = bars["close"].ewm(span=period, adjust=False, min_periods=period).mean().to_numpy()
+    close_t = to_minutes(bars.index) + tf_minutes
+    idx = np.searchsorted(close_t, boxes["box_end"].to_numpy(), side="right") - 1
+    return np.where(idx >= 0, ema[np.clip(idx, 0, None)], np.nan)
+
+
+def ema_trend(m1: pd.DataFrame, boxes: pd.DataFrame, spec: str) -> tuple[np.ndarray, np.ndarray]:
+    """(allow_long, allow_short) per box from the box close vs the EMA."""
+    parsed = parse_ema(spec)
+    n = len(boxes)
+    if parsed is None:
+        return np.ones(n, np.bool_), np.ones(n, np.bool_)
+    ema = ema_at_boxes(m1, boxes, *parsed)
+    close = boxes["close"].to_numpy()
+    # NaN EMA compares False both ways, so warm-up boxes take no trade.
+    return close > ema, close < ema
+
+
 def breakout_candidates(
     m1: pd.DataFrame,
     m1a: dict[str, np.ndarray],
     boxes: pd.DataFrame,
     confirm_minutes: int,
     max_window: int,
+    allow_long: np.ndarray | None = None,
+    allow_short: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Boxes that broke out within ``max_window``, with entry details."""
     c_start, c_close = confirm_candles(m1, confirm_minutes)
+    n = len(boxes)
     side, entry_t, entry_px = first_breakouts(
         boxes["box_end"].to_numpy(),
         boxes["high"].to_numpy(),
@@ -322,6 +378,8 @@ def breakout_candidates(
         c_close,
         np.int64(confirm_minutes),
         np.int64(max_window),
+        np.ones(n, np.bool_) if allow_long is None else np.asarray(allow_long, np.bool_),
+        np.ones(n, np.bool_) if allow_short is None else np.asarray(allow_short, np.bool_),
     )
     cand = boxes.assign(side=side, entry_t=entry_t, entry_px=entry_px)
     cand = cand.loc[cand["side"] != 0].copy()

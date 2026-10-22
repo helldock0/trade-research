@@ -16,9 +16,13 @@ from src.strategy.rolling_box import (
     REASON_TRAIL,
     breakout_candidates,
     build_boxes,
+    ema_at_boxes,
+    ema_trend,
+    first_per_day,
     m1_arrays,
     net_r,
     one_at_a_time,
+    parse_ema,
     parse_exit,
     parse_stop,
     simulate_candidates,
@@ -278,3 +282,91 @@ def test_index_symbols_resolve():
     assert set(INDICES) <= set(FULL_UNIVERSE)
     assert _resolve_instrument("US30") == "USA30.IDX/USD"
     assert _resolve_instrument("GER40") == "DEU.IDX/EUR"
+
+
+def test_parse_ema():
+    assert parse_ema("none") is None
+    assert parse_ema("m15:50") == (15, 50)
+    assert parse_ema("H1:200") == (60, 200)
+    with pytest.raises(ValueError):
+        parse_ema("d3:10")
+
+
+def test_ema_uses_only_closed_bars():
+    m1 = _random_walk_m1(days=4)
+    boxes = build_boxes(m1, time(0, 0), time(19, 30))
+    got = ema_at_boxes(m1, boxes, 60, 5)
+    h1 = m1.set_index("timestamp")["close"].resample("60min", label="left", closed="left").last().dropna()
+    ema = h1.ewm(span=5, adjust=False, min_periods=5).mean()
+    end = pd.to_datetime(boxes["box_end"].to_numpy() * 60, unit="s", utc=True)
+    # Box ending 01:15 sees the 00:00-01:00 bar; box ending 02:00 already sees 01:00-02:00.
+    for hhmm, bar in (("01:15", "00:00"), ("02:00", "01:00")):
+        day = pd.Timestamp("2022-12-21", tz="UTC")
+        i = int(np.flatnonzero(end == day + pd.Timedelta(hhmm + ":00"))[0])
+        assert got[i] == pytest.approx(ema[day + pd.Timedelta(bar + ":00")])
+
+
+def test_trend_filter_ignores_counter_breakouts():
+    rows = [
+        ("00:00", 1.0950, 1.0950, 1.0950, 1.0950),  # flat below the coming box -> EMA ~1.0950
+        ("02:00", 1.0995, 1.1010, 1.0990, 1.1000),  # box 02:00-02:15 closes 1.1000 > EMA 1.0975
+        ("02:20", 1.1000, 1.1000, 1.0985, 1.0985),  # close below box low: a sell, against trend
+        ("02:30", 1.0985, 1.1015, 1.0985, 1.1015),  # close above box high: the buy
+    ]
+    m1 = _m1(rows)
+    m1a = m1_arrays(m1)
+    boxes = build_boxes(m1, time(0, 0), time(19, 30))
+    b0 = int(boxes["box_start"].iloc[8])  # 02:00 box
+    plain = breakout_candidates(m1, m1a, boxes, 1, 60)
+    assert plain.set_index("box_start").loc[b0, "side"] == -1
+    up, down = ema_trend(m1, boxes, "m15:3")
+    assert up[8] and not down[8]
+    trend = breakout_candidates(m1, m1a, boxes, 1, 60, up, down).set_index("box_start")
+    assert trend.loc[b0, "side"] == 1
+    assert trend.loc[b0, "entry_px"] == pytest.approx(1.1015)
+    assert pd.Timestamp(int(trend.loc[b0, "entry_t"]) * 60, unit="s", tz="UTC") == DAY + pd.Timedelta("02:31:00")
+
+
+def test_first_per_day():
+    day = np.array([5, 5, 5, 6, 6, 7], np.int64)
+    mask = np.array([False, True, True, True, True, False])
+    assert first_per_day(day, mask).tolist() == [False, True, False, True, False, False]
+
+
+def _daily_cfg() -> dict:
+    cfg = _small_cfg()
+    sweep = {k: v for k, v in cfg["sweep"].items() if k != "concurrency"}
+    sweep.update({"ema": ["none", "m15:20"], "start_times": ["00:00", "07:00"]})
+    sweep.update({"exits": ["tp:1", "session"]})
+    return {**cfg, "sweep": sweep}
+
+
+def test_daily_sweep_matches_single_config_trades():
+    cfg = _daily_cfg()
+    costs = {"default": {"half_spread_pips": 0.5, "slippage_pips": 0.2, "commission_per_lot_usd": 7.0}}
+    m1 = _random_walk_m1()
+    summary, _, _ = sweep_symbol("EURUSD", m1, cfg, costs)
+    table = config_table(cfg)
+    assert list(table.columns[1:]) == ["ema", "confirm_tf", "stop", "exit", "start", "window", "min_risk_cost"]
+    assert len(summary) == len(table) == 2 ** 7
+    assert (summary["n"] <= summary["n_days"]).all()
+    for _, row in table.sample(8, random_state=3).iterrows():
+        trades = config_trades(
+            "EURUSD",
+            m1,
+            cfg,
+            costs,
+            confirm_tf=row.confirm_tf,
+            stop=row.stop,
+            exit=row.exit,
+            window=row.window,
+            min_risk_cost=row.min_risk_cost,
+            ema=row.ema,
+            start=row.start,
+        )
+        s = summary.loc[summary["cfg_id"] == row.cfg_id].iloc[0]
+        assert len(trades) == s["n"]
+        assert trades["r_net"].sum() == pytest.approx(s["sum_r"])
+        assert trades["entry_time"].dt.date.is_unique
+        start_min = int(row.start[:2]) * 60 + int(row.start[3:])
+        assert ((trades["box_start"].dt.hour * 60 + trades["box_start"].dt.minute) >= start_min).all()

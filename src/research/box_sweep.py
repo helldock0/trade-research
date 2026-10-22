@@ -1,9 +1,16 @@
 """Parameter sweep for the rolling 15-minute box breakout.
 
 For each symbol, breakout candidates are found once per confirmation
-timeframe and every (stop, exit) variant is simulated on M1 in one pass.
-Window, cost filter and concurrency are cheap post-filters on those results,
-so the full grid costs little more than the simulation itself.
+timeframe (and EMA filter) and every (stop, exit) variant is simulated on M1
+in one pass. Window, start time, cost filter and concurrency are cheap
+post-filters on those results, so the full grid costs little more than the
+simulation itself.
+
+Two modes, chosen by the config's ``sweep`` section:
+
+- rolling (``concurrency`` key): every box can trade, one at a time or all.
+- daily (``ema`` key): one trade per symbol per day, the first breakout after
+  ``start_times`` in the direction of the EMA (``none`` takes either side).
 
 Results are kept as sums (not means) so they can be pooled across symbols,
 split in-sample / out-of-sample, by UTC hour of the box and by year.
@@ -26,6 +33,8 @@ from src.strategy.rolling_box import (
     REASON_NAMES,
     breakout_candidates,
     build_boxes,
+    ema_trend,
+    first_per_day,
     m1_arrays,
     max_drawdown,
     net_r,
@@ -34,9 +43,25 @@ from src.strategy.rolling_box import (
 )
 
 GRID_KEYS = ("confirm_tf", "stop", "exit", "window", "min_risk_cost", "concurrency")
+DAILY_GRID_KEYS = ("ema", "confirm_tf", "stop", "exit", "start", "window", "min_risk_cost")
 FIRST_YEAR = 2018
 N_YEARS = 12
 IST_OFFSET_MIN = 330
+SUMMARY_COLS = [
+    "cfg_id",
+    "n",
+    "n_is",
+    "sum_r",
+    "sum_r_is",
+    "sum_r_oos",
+    "sum_r_gross",
+    "sum_r_low_is",
+    "sum_r_low_oos",
+    "wins",
+    "win_r",
+    "loss_r",
+    "max_dd_r",
+]
 
 
 def ist_label(hour_utc: int) -> str:
@@ -45,29 +70,150 @@ def ist_label(hour_utc: int) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
+def is_daily(cfg: dict[str, Any]) -> bool:
+    return "ema" in cfg["sweep"]
+
+
+def grid_keys(cfg: dict[str, Any]) -> tuple[str, ...]:
+    return DAILY_GRID_KEYS if is_daily(cfg) else GRID_KEYS
+
+
 def grid_lists(cfg: dict[str, Any]) -> dict[str, list]:
     sw = cfg["sweep"]
-    return {
+    g = {
         "confirm_tf": [int(x) for x in sw["confirm_tf_minutes"]],
         "stop": [str(x) for x in sw["stops"]],
         "exit": [str(x) for x in sw["exits"]],
         "window": sorted(int(x) for x in sw["window_minutes"]),
         "min_risk_cost": [float(x) for x in sw["min_risk_cost"]],
-        "concurrency": [str(x) for x in sw["concurrency"]],
     }
+    if is_daily(cfg):
+        g["ema"] = [str(x) for x in sw["ema"]]
+        g["start"] = [str(x) for x in sw["start_times"]]
+    else:
+        g["concurrency"] = [str(x) for x in sw["concurrency"]]
+    return g
 
 
 def config_table(cfg: dict[str, Any]) -> pd.DataFrame:
     """All grid combinations; row order defines cfg_id (matches sweep loops)."""
     g = grid_lists(cfg)
-    rows = list(itertools.product(*(g[k] for k in GRID_KEYS)))
-    out = pd.DataFrame(rows, columns=list(GRID_KEYS))
+    keys = grid_keys(cfg)
+    rows = list(itertools.product(*(g[k] for k in keys)))
+    out = pd.DataFrame(rows, columns=list(keys))
     out.insert(0, "cfg_id", np.arange(len(out)))
     return out
 
 
 def _minutes(ts: str) -> int:
     return int(pd.Timestamp(ts, tz="UTC").value // 60_000_000_000)
+
+
+def _tod_minutes(hhmm: str) -> int:
+    t = parse_hhmm(hhmm)
+    return t.hour * 60 + t.minute
+
+
+def _boxes(m1: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
+    sess, sig = cfg["sessions"], cfg.get("signal", {})
+    return build_boxes(
+        m1,
+        parse_hhmm(sess["start"]),
+        parse_hhmm(sess["end"]),
+        box_minutes=int(sig.get("box_minutes", 15)),
+        atr_period=int(sig.get("atr_period", 14)),
+    )
+
+
+class _Collector:
+    """Accumulates per-config sums, hour buckets and year buckets for one symbol."""
+
+    def __init__(self) -> None:
+        self.rows: list[tuple] = []
+        self.hours: list[np.ndarray] = []
+        self.years: list[np.ndarray] = []
+
+    def add(self, rn, rg, rl, oos, hour, year, keep) -> None:
+        r, o, low = rn[keep], oos[keep], rl[keep]
+        h, y = hour[keep], year[keep]
+        self.rows.append(
+            (
+                len(self.rows),
+                len(r),
+                int((~o).sum()),
+                float(r.sum()),
+                float(r[~o].sum()),
+                float(r[o].sum()),
+                float(rg[keep].sum()),
+                float(low[~o].sum()),
+                float(low[o].sum()),
+                int((r > 0).sum()),
+                float(r[r > 0].sum()),
+                float(-r[r < 0].sum()),
+                float(max_drawdown(r)) if len(r) else 0.0,
+            )
+        )
+        hb = np.zeros((24, 4))
+        hb[:, 0] = np.bincount(h[~o], minlength=24)
+        hb[:, 1] = np.bincount(h[~o], weights=r[~o], minlength=24)
+        hb[:, 2] = np.bincount(h[o], minlength=24)
+        hb[:, 3] = np.bincount(h[o], weights=r[o], minlength=24)
+        self.hours.append(hb)
+        yb = np.zeros((N_YEARS, 2))
+        yb[:, 0] = np.bincount(y, minlength=N_YEARS)
+        yb[:, 1] = np.bincount(y, weights=r, minlength=N_YEARS)
+        self.years.append(yb)
+
+    def frames(self, symbol: str, n_days: int, n_days_is: int):
+        summary = pd.DataFrame(self.rows, columns=SUMMARY_COLS)
+        summary.insert(0, "symbol", symbol)
+        summary["n_days"] = n_days
+        summary["n_days_is"] = n_days_is
+
+        hours = np.stack(self.hours)  # (cfg, 24, 4)
+        n_cfg = hours.shape[0]
+        by_hour = pd.DataFrame(
+            {
+                "symbol": symbol,
+                "cfg_id": np.repeat(np.arange(n_cfg), 24),
+                "hour_utc": np.tile(np.arange(24), n_cfg),
+                "n_is": hours[:, :, 0].ravel().astype(np.int64),
+                "sum_r_is": hours[:, :, 1].ravel(),
+                "n_oos": hours[:, :, 2].ravel().astype(np.int64),
+                "sum_r_oos": hours[:, :, 3].ravel(),
+            }
+        )
+        by_hour = by_hour.loc[(by_hour["n_is"] + by_hour["n_oos"]) > 0].reset_index(drop=True)
+
+        years = np.stack(self.years)  # (cfg, N_YEARS, 2)
+        by_year = pd.DataFrame(
+            {
+                "symbol": symbol,
+                "cfg_id": np.repeat(np.arange(n_cfg), N_YEARS),
+                "year": np.tile(np.arange(N_YEARS) + FIRST_YEAR, n_cfg),
+                "n": years[:, :, 0].ravel().astype(np.int64),
+                "sum_r": years[:, :, 1].ravel(),
+            }
+        )
+        by_year = by_year.loc[by_year["n"] > 0].reset_index(drop=True)
+        return summary, by_hour, by_year
+
+
+def _r_variants(p, r0, side_cost, rt_cost, low_mult):
+    """(valid, net R, low-cost R, gross R) for one stop/exit column."""
+    valid = np.isfinite(r0) & np.isfinite(p)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rn = net_r(p, r0, side_cost, rt_cost)
+        rl = net_r(p, r0, low_mult * side_cost, low_mult * rt_cost)
+        rg = p / r0
+    return valid, rn, rl, rg
+
+
+def _cost_ok(r0, side_cost, rt_cost, k):
+    if k <= 0:
+        return np.ones(r0.shape[0], np.bool_)
+    with np.errstate(invalid="ignore"):
+        return (r0 + side_cost) >= k * rt_cost
 
 
 def sweep_symbol(
@@ -78,131 +224,57 @@ def sweep_symbol(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return (summary, by_hour, by_year) frames keyed by cfg_id for one symbol."""
     g = grid_lists(cfg)
-    sess, sig = cfg["sessions"], cfg.get("signal", {})
     oos_start = _minutes(cfg["validation"]["oos_start"])
     low_mult = float(cfg["validation"].get("low_cost_mult", 0.5))
     m1a = m1_arrays(m1)
-    boxes = build_boxes(
-        m1,
-        parse_hhmm(sess["start"]),
-        parse_hhmm(sess["end"]),
-        box_minutes=int(sig.get("box_minutes", 15)),
-        atr_period=int(sig.get("atr_period", 14)),
-    )
+    boxes = _boxes(m1, cfg)
     day_min = boxes["box_start"] - boxes["box_start"] % 1440
     n_days = int(day_min.nunique())
     n_days_is = int(day_min[boxes["box_start"] < oos_start].nunique())
     side_cost, rt_cost = round_trip_cost_price(symbol, costs_cfg)
+    col = _Collector()
 
-    summary_rows: list[tuple] = []
-    hour_blocks: list[np.ndarray] = []
-    year_blocks: list[np.ndarray] = []
-    cfg_id = 0
-    for confirm in g["confirm_tf"]:
-        cand = breakout_candidates(m1, m1a, boxes, confirm, max(g["window"]))
-        pnl, exit_t, _, risk = simulate_candidates(m1a, cand, g["stop"], g["exit"])
-        entry_t = cand["entry_t"].to_numpy(np.int64)
-        delay = cand["delay"].to_numpy()
-        hour = cand["hour_utc"].to_numpy()
-        year = np.clip(cand["year"].to_numpy() - FIRST_YEAR, 0, N_YEARS - 1)
-        oos = cand["box_start"].to_numpy() >= oos_start
-        for s_i in range(len(g["stop"])):
-            r0 = risk[:, s_i]
-            for e_i in range(len(g["exit"])):
-                p = pnl[:, s_i, e_i]
-                valid = np.isfinite(r0) & np.isfinite(p)
-                with np.errstate(invalid="ignore", divide="ignore"):
-                    rn = net_r(p, r0, side_cost, rt_cost)
-                    rl = net_r(p, r0, low_mult * side_cost, low_mult * rt_cost)
-                    rg = p / r0
-                xt = exit_t[:, s_i, e_i]
-                for window in g["window"]:
-                    in_window = valid & (delay <= window)
-                    for k in g["min_risk_cost"]:
-                        m = in_window & ((r0 + side_cost) >= k * rt_cost) if k > 0 else in_window
-                        for conc in g["concurrency"]:
-                            keep = one_at_a_time(entry_t, xt, m) if conc == "one" else m
-                            r, o = rn[keep], oos[keep]
-                            h, y = hour[keep], year[keep]
-                            low = rl[keep]
-                            summary_rows.append(
-                                (
-                                    cfg_id,
-                                    len(r),
-                                    int((~o).sum()),
-                                    float(r.sum()),
-                                    float(r[~o].sum()),
-                                    float(r[o].sum()),
-                                    float(rg[keep].sum()),
-                                    float(low[~o].sum()),
-                                    float(low[o].sum()),
-                                    int((r > 0).sum()),
-                                    float(r[r > 0].sum()),
-                                    float(-r[r < 0].sum()),
-                                    float(max_drawdown(r)) if len(r) else 0.0,
-                                )
-                            )
-                            hb = np.zeros((24, 4))
-                            hb[:, 0] = np.bincount(h[~o], minlength=24)
-                            hb[:, 1] = np.bincount(h[~o], weights=r[~o], minlength=24)
-                            hb[:, 2] = np.bincount(h[o], minlength=24)
-                            hb[:, 3] = np.bincount(h[o], weights=r[o], minlength=24)
-                            hour_blocks.append(hb)
-                            yb = np.zeros((N_YEARS, 2))
-                            yb[:, 0] = np.bincount(y, minlength=N_YEARS)
-                            yb[:, 1] = np.bincount(y, weights=r, minlength=N_YEARS)
-                            year_blocks.append(yb)
-                            cfg_id += 1
+    if is_daily(cfg):
+        variants = [(ema, ema_trend(m1, boxes, ema)) for ema in g["ema"]]
+    else:
+        variants = [(None, (None, None))]
 
-    summary = pd.DataFrame(
-        summary_rows,
-        columns=[
-            "cfg_id",
-            "n",
-            "n_is",
-            "sum_r",
-            "sum_r_is",
-            "sum_r_oos",
-            "sum_r_gross",
-            "sum_r_low_is",
-            "sum_r_low_oos",
-            "wins",
-            "win_r",
-            "loss_r",
-            "max_dd_r",
-        ],
-    )
-    summary.insert(0, "symbol", symbol)
-    summary["n_days"] = n_days
-    summary["n_days_is"] = n_days_is
+    for _, (allow_long, allow_short) in variants:
+        for confirm in g["confirm_tf"]:
+            cand = breakout_candidates(
+                m1, m1a, boxes, confirm, max(g["window"]), allow_long, allow_short
+            )
+            pnl, exit_t, _, risk = simulate_candidates(m1a, cand, g["stop"], g["exit"])
+            entry_t = cand["entry_t"].to_numpy(np.int64)
+            box_start = cand["box_start"].to_numpy(np.int64)
+            delay = cand["delay"].to_numpy()
+            hour = cand["hour_utc"].to_numpy()
+            year = np.clip(cand["year"].to_numpy() - FIRST_YEAR, 0, N_YEARS - 1)
+            oos = box_start >= oos_start
+            day, tod = box_start // 1440, box_start % 1440
+            for s_i in range(len(g["stop"])):
+                r0 = risk[:, s_i]
+                for e_i in range(len(g["exit"])):
+                    valid, rn, rl, rg = _r_variants(pnl[:, s_i, e_i], r0, side_cost, rt_cost, low_mult)
+                    xt = exit_t[:, s_i, e_i]
+                    if is_daily(cfg):
+                        for start in g["start"]:
+                            base = valid & (tod >= _tod_minutes(start))
+                            for window in g["window"]:
+                                in_window = base & (delay <= window)
+                                for k in g["min_risk_cost"]:
+                                    m = in_window & _cost_ok(r0, side_cost, rt_cost, k)
+                                    col.add(rn, rg, rl, oos, hour, year, first_per_day(day, m))
+                    else:
+                        for window in g["window"]:
+                            in_window = valid & (delay <= window)
+                            for k in g["min_risk_cost"]:
+                                m = in_window & _cost_ok(r0, side_cost, rt_cost, k)
+                                for conc in g["concurrency"]:
+                                    keep = one_at_a_time(entry_t, xt, m) if conc == "one" else m
+                                    col.add(rn, rg, rl, oos, hour, year, keep)
 
-    hours = np.stack(hour_blocks)  # (cfg, 24, 4)
-    n_cfg = hours.shape[0]
-    by_hour = pd.DataFrame(
-        {
-            "symbol": symbol,
-            "cfg_id": np.repeat(np.arange(n_cfg), 24),
-            "hour_utc": np.tile(np.arange(24), n_cfg),
-            "n_is": hours[:, :, 0].ravel().astype(np.int64),
-            "sum_r_is": hours[:, :, 1].ravel(),
-            "n_oos": hours[:, :, 2].ravel().astype(np.int64),
-            "sum_r_oos": hours[:, :, 3].ravel(),
-        }
-    )
-    by_hour = by_hour.loc[(by_hour["n_is"] + by_hour["n_oos"]) > 0].reset_index(drop=True)
-
-    years = np.stack(year_blocks)  # (cfg, N_YEARS, 2)
-    by_year = pd.DataFrame(
-        {
-            "symbol": symbol,
-            "cfg_id": np.repeat(np.arange(n_cfg), N_YEARS),
-            "year": np.tile(np.arange(N_YEARS) + FIRST_YEAR, n_cfg),
-            "n": years[:, :, 0].ravel().astype(np.int64),
-            "sum_r": years[:, :, 1].ravel(),
-        }
-    )
-    by_year = by_year.loc[by_year["n"] > 0].reset_index(drop=True)
-    return summary, by_hour, by_year
+    return col.frames(symbol, n_days, n_days_is)
 
 
 def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
@@ -226,19 +298,7 @@ def add_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 def portfolio_summary(summary: pd.DataFrame) -> pd.DataFrame:
     """Pool every symbol's trades per config (equal 1R risk per trade)."""
-    cols = [
-        "n",
-        "n_is",
-        "sum_r",
-        "sum_r_is",
-        "sum_r_oos",
-        "sum_r_gross",
-        "sum_r_low_is",
-        "sum_r_low_oos",
-        "wins",
-        "win_r",
-        "loss_r",
-    ]
+    cols = [c for c in SUMMARY_COLS if c not in ("cfg_id", "max_dd_r")]
     pooled = summary.groupby("cfg_id", as_index=False)[cols].sum()
     pooled["n_symbols"] = summary.groupby("cfg_id")["symbol"].nunique().to_numpy()
     return add_metrics(pooled)
@@ -297,26 +357,30 @@ def config_trades(
     window: int,
     min_risk_cost: float = 0.0,
     concurrency: str = "one",
+    ema: str | None = None,
+    start: str | None = None,
 ) -> pd.DataFrame:
-    """Trade list for a single configuration (for drill-down and charts)."""
-    sess, sig = cfg["sessions"], cfg.get("signal", {})
+    """Trade list for a single configuration (for drill-down and charts).
+
+    Passing ``ema`` (``none`` included) selects the daily mode: one trade per
+    day, the first in the EMA direction after ``start``; ``concurrency`` is
+    then ignored.
+    """
     m1a = m1_arrays(m1)
-    boxes = build_boxes(
-        m1,
-        parse_hhmm(sess["start"]),
-        parse_hhmm(sess["end"]),
-        box_minutes=int(sig.get("box_minutes", 15)),
-        atr_period=int(sig.get("atr_period", 14)),
-    )
-    cand = breakout_candidates(m1, m1a, boxes, confirm_tf, window)
+    boxes = _boxes(m1, cfg)
+    allow_long, allow_short = ema_trend(m1, boxes, ema) if ema is not None else (None, None)
+    cand = breakout_candidates(m1, m1a, boxes, confirm_tf, window, allow_long, allow_short)
     pnl, exit_t, reason, risk = simulate_candidates(m1a, cand, [stop], [exit])
     p, xt, rs, r0 = pnl[:, 0, 0], exit_t[:, 0, 0], reason[:, 0, 0], risk[:, 0]
     side_cost, rt_cost = round_trip_cost_price(symbol, costs_cfg)
-    m = np.isfinite(p) & np.isfinite(r0)
-    if min_risk_cost > 0:
-        m &= (r0 + side_cost) >= min_risk_cost * rt_cost
+    m = np.isfinite(p) & np.isfinite(r0) & _cost_ok(r0, side_cost, rt_cost, min_risk_cost)
     entry_t = cand["entry_t"].to_numpy(np.int64)
-    keep = one_at_a_time(entry_t, xt, m) if concurrency == "one" else m
+    box_start = cand["box_start"].to_numpy(np.int64)
+    if ema is not None:
+        m &= box_start % 1440 >= _tod_minutes(start or cfg["sessions"]["start"])
+        keep = first_per_day(box_start // 1440, m)
+    else:
+        keep = one_at_a_time(entry_t, xt, m) if concurrency == "one" else m
     c = cand.loc[keep]
     to_ts = lambda mins: pd.to_datetime(np.asarray(mins, np.int64) * 60, unit="s", utc=True)  # noqa: E731
     out = pd.DataFrame(
