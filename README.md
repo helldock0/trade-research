@@ -20,6 +20,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
 | `rolling_box` | Rolling M15 box breakout, Tokyo open to NY end (M1 sweep) | NO-GO |
+| `rolling_box_ema` | Same, one trade/day in the EMA direction | NO-GO |
 
 ## Setup
 
@@ -55,6 +56,7 @@ python scripts/run_all.py --strategies cssm,orb
 # 2b) Rolling 15-minute box breakout sweep (needs M1 data, incl. indices)
 python scripts/download_data.py --full --intervals M1 --workers 8
 python scripts/run_rolling_box.py --workers 4
+python scripts/run_rolling_box.py --config strategy_rolling_box_ema.yaml --out reports/rolling_box_ema
 
 # 3) Tests
 python -m pytest -q

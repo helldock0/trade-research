@@ -71,3 +71,48 @@ setups stay positive.
 python scripts/download_data.py --full --intervals M1 --workers 8
 python scripts/run_rolling_box.py --workers 4   # ~6 min; writes reports/rolling_box/
 ```
+
+## Variant: one trade a day in the EMA direction (`rolling_box_ema`)
+
+**Verdict: NO-GO.** The EMA filter does not help; it makes results slightly worse.
+
+Same boxes, but each market takes only one trade per day: the first breakout after
+the start time whose direction agrees with the EMA (box close above the EMA allows
+only buys, below only sells; counter-trend breakouts are ignored). The EMA reads only
+bars closed by the box close. `none` takes the first breakout in either direction and
+is the control. Config: `configs/strategy_rolling_box_ema.yaml`.
+
+| Dimension | Values |
+|-----------|--------|
+| Direction rule | none (control), M15 EMA 50, M15 EMA 200, H1 EMA 200 |
+| Day starts | 05:30 IST (Tokyo), 12:30 IST (London), 18:30 IST (New York) |
+| Confirmation candle | M1, M15 |
+| Breakout valid for | 15, 60, 120 min |
+| Stop | opposite side, box middle, 2x ATR |
+| Exit | 1R, 2R, 3R target; hold to 01:00 IST; trail 1R after +1R |
+| Cost filter | none, or skip when the stop is < 3x the round-trip cost |
+
+2,160 setups per market, 75,600 market/setup combinations.
+
+Results (all markets pooled, R per trade):
+
+- 0 of 2,160 setups are positive after costs in 2018-22, in 2023-26, or at half
+  costs in 2023-26. 32% are positive before costs, but by little (best +0.04R).
+- Each EMA setup against the identical no-EMA setup (median change):
+  M15 EMA 50 -0.0005R (47% of setups improved), M15 EMA 200 -0.007R (31%),
+  H1 EMA 200 -0.011R (14%). The change is negative before costs too, so
+  with-trend breakouts are slightly worse than either-direction ones.
+- Best 2018-22 setup has no EMA: from 12:30 IST, M15 close, 120 min, opposite-side
+  stop, hold to 01:00 IST, stop >= 3x cost. -0.16R in 2018-22, -0.21R in 2023-26,
+  +0.04R before costs.
+- The user's rules (from 05:30 IST, M15 close, 60 min, opposite-side stop, 1R):
+  -0.38R with no EMA, -0.41R with the H1 EMA 200 (45% / 44% win rate).
+- Start time: New York (18:30 IST) loses least (median -0.23R), Tokyo most (-0.26R).
+- In-sample winners do not persist: of the 647 market/setup combinations positive in
+  2018-22, only 20% are still positive in 2023-26.
+- USDJPY again stands out before costs (90% of its setups positive, median +0.05R).
+  Its best setup (M15 EMA 200, from 05:30 IST, M15 close, box-middle stop, hold to
+  01:00 IST, stop >= 3x cost) is +0.08R in 2018-22 and +0.02R in 2023-26 after costs,
+  +0.31R before costs; only 3 of its 2,160 setups are positive in both periods.
+
+Reproduce: `python scripts/run_rolling_box.py --config strategy_rolling_box_ema.yaml --out reports/rolling_box_ema --workers 4`
