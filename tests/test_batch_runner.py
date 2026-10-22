@@ -30,6 +30,7 @@ def test_list_strategies_canonical():
         "event_drift",
         "macro_swing",
         "tom",
+        "imom",
     ]
     assert tuple(list_strategies()) == KNOWN_STRATEGIES
 

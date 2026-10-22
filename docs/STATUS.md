@@ -23,9 +23,11 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | `tom` | Turn of the month on US index CFDs (long NAS100 from the close before the month's last trading day to the close of the 3rd trading day). The signal check passes on 1971–2017 but has faded since the 2010s. On 2018+ bars it does no better than the same rules on a mid-month window: OOS +0.061R vs placebo +0.112R. See "Turn of the month" below. | NO-GO |
 
+| `imom` | Market intraday momentum on US index CFDs: at 15:30 New York trade the sign of the day's return so far, exit at the 16:00 close (one trade a day). Net of measured-spread costs: −1.3 bp/trade on 2018–2021 and −2.2 bp (t −2.9) on 2022+. Gross momentum was +1.8 bp before 2022 and is gone since. Engine: −0.044R over 2,162 trades. See "Intraday momentum" below. | NO-GO |
+
 ## Active
 
-None. Both fundamentals lines and the turn-of-month line are rejected (2026-10-22).
+None. The fundamentals lines, turn of the month and intraday momentum are all rejected (2026-10-22).
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -241,6 +243,35 @@ PASS by the rule. By decade, though, the excess falls from +9 to +16 bp/day (197
 
 **Verdict: NO-GO.** On 2018+ the TOM trade earns no more than holding the index on any other four days, so the profit is index drift, not a calendar effect. It also cannot pass a prop challenge: 104 trades of about 0.1R at 0.5% risk add up to about 6% in 8.7 years, so the Monte Carlo never reaches the +10% target.
 
+### Intraday momentum (2026-10-22, new idea for more trades, cloud run)
+
+Hypothesis: the index's return so far today predicts its last half hour. Sources: Gao, Han, Li & Zhou 2018; Baltussen, Da, Lammers & Martens 2021, where dealers' gamma hedging and leveraged-ETF rebalancing trade with the day's move into the close.
+
+Rules, fixed in `configs/strategy_imom.yaml` before the data was looked at:
+- At 15:30 New York take the sign of (previous 16:00 close → 15:30) and hold to 16:00, one trade per trading day.
+- US trading days come from the FRED dates.
+- Costs come from `configs/costs.yaml`. They are a little above the Dukascopy spreads measured near the close from the data branch's bid/ask files: US500 0.5, NAS100 1.4, US30 2.3 points, flat across years. The round trip is about 2.5 bp on US500.
+- There are no intraday bars before 2018 here, so the test is a time split: dev 2018–2021, holdout 2022+.
+- Rule: dev net > 0; holdout net > 0 with t ≥ 2; holdout beats always-long over the same half hour.
+
+`python scripts/run_imom_check.py` → `reports/imom_check.md` (no stops, net of costs):
+
+| Symbol | Variant | Dev net bp (t) | Dev gross bp | Holdout net bp (t) | Holdout gross bp | Corr dev / holdout |
+|---|---|---|---|---|---|---|
+| US500 | day (decision row) | −1.30 (−1.01) | +1.84 | −2.17 (−2.90) | −0.22 | 0.074 / 0.012 |
+| US500 | strong days only | −3.09 (−1.29) | +0.06 | −2.52 (−2.23) | −0.56 | |
+| US500 | first half hour (Gao) | −3.66 (−2.82) | −0.52 | −1.98 (−2.64) | −0.03 | 0.091 / −0.044 |
+| NAS100 | day | −0.80 (−0.55) | +2.53 | −2.13 (−2.38) | −0.39 | 0.113 / 0.020 |
+| US30 | day | +0.21 (0.16) | +1.51 | −1.45 (−2.21) | −0.52 | 0.105 / −0.006 |
+
+- The always-long placebo over the same half hour is also negative after costs (US500 −4.4 / −1.9 bp).
+- Engine (`python scripts/run_variants.py --config strategy_imom.yaml --stem imom_compare`): `imom` −0.044R over 2,162 trades, PF 0.80, max DD 55%, Monte Carlo ruin 1.00.
+
+**Verdict: NO-GO.**
+- A small gross momentum existed in 2018–2021 (corr 0.07–0.11, about +2 bp) but was below the round-trip cost.
+- It disappeared from 2022, a change in closing-auction dynamics that coincides with the growth of same-day (0DTE) options.
+- Lesson for one-trade-a-day CFD ideas: the edge has to be several bp per trade before costs, or the spread eats it.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -250,4 +281,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 3. Optional: a stronger external forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied). Re-run `--calendar-only` first. Worth it only together with the parked CPI-fade lead, and that needs out-of-sample bars.
 4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
 5. Turn of the month is NO-GO; the decade table shows the calendar effect has faded since the 2010s.
+5b. Intraday momentum is NO-GO: below costs before 2022, gone after. `scripts/run_variants.py` runs any config's `variants:`.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

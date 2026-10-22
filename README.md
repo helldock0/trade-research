@@ -67,6 +67,11 @@ python scripts/run_tom_check.py
 python scripts/bars_from_data_branch.py --pairs NAS100,US500
 python scripts/run_tom_backtest.py
 
+# 1g) Intraday momentum on index CFDs (last half hour): bar signal check net of costs, then the engine
+python scripts/bars_from_data_branch.py --pairs US500,NAS100,US30
+python scripts/run_imom_check.py
+python scripts/run_variants.py --config strategy_imom.yaml --stem imom_compare
+
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
 

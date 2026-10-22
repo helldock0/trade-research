@@ -59,6 +59,10 @@ pairs:
     half_spread_pips: 0.3
     slippage_pips: 0.2
     commission_per_lot_usd: 0.0
+  US30:                      # Dukascopy spread near the US close: ~2.3 points
+    half_spread_pips: 1.2
+    slippage_pips: 0.6
+    commission_per_lot_usd: 0.0
   XAUUSD:
     half_spread_pips: 20.0
     slippage_pips: 5.0
@@ -78,9 +82,11 @@ pip_size:
   EURGBP: 0.0001
   NAS100: 1.0
   US500: 1.0
+  US30: 1.0
   XAUUSD: 0.01
 
 # Units per lot where it is not 100k FX / 100 oz gold: USD index CFDs at $1 per point per lot
 contracts:
   NAS100: 1.0
   US500: 1.0
+  US30: 1.0
