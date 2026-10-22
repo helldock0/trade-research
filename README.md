@@ -19,6 +19,8 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `event_drift` | Pre-release drift / surprise / fade on macro releases | RESEARCH |
+| `macro_swing` | Macro currency scores (rates, carry, risk, commodities, positioning) + D1 trigger | RESEARCH |
 
 ## Setup
 
@@ -42,10 +44,64 @@ $env:PYTHONIOENCODING="utf-8"
 # 1) Dukascopy OHLC -> data/parquet
 python scripts/download_data.py
 
+# 1b) Economic calendar (FXStreet) + FRED gasoline -> data/events_calendar.csv, data/macro/
+python scripts/download_calendar.py --gasoline
+
+# 1c) Macro series (FRED, ECB, BoC, RBA, MOF, BoE, BIS, CFTC) -> data/macro/
+python scripts/download_macro.py --show
+
 # 2) Single strategy
 python scripts/run_backtest.py --strategy htf_adx_pullback
 python scripts/run_prop_sim.py --strategy htf_adx_pullback
 python scripts/run_walkforward.py --strategy htf_adx_pullback
+
+# 1d) Macro IC check (FRED daily FX, no bars): does the macro_swing bias predict returns?
+python scripts/run_macro_ic.py
+python scripts/run_macro_ic.py --validate    # signal variants: dev 2018+ vs holdout 2012-2017
+
+# cloud sessions without data/parquet: M15 bars from the data branch (Git LFS)
+python scripts/bars_from_data_branch.py
+
+# 1f) Turn of the month on index CFDs: FRED signal check first, then bars vs a mid-month placebo
+python scripts/run_tom_check.py
+python scripts/bars_from_data_branch.py --pairs NAS100,US500
+python scripts/run_tom_backtest.py
+
+# 1g) Intraday momentum on index CFDs (last half hour): bar signal check net of costs, then the engine
+python scripts/bars_from_data_branch.py --pairs US500,NAS100,US30
+python scripts/run_imom_check.py
+python scripts/run_variants.py --config strategy_imom.yaml --stem imom_compare
+
+# 1h) Buy the dip in an uptrend on index CFDs: FRED signal check, then the engine
+python scripts/run_dip_check.py
+python scripts/run_variants.py --config strategy_dip.yaml --stem dip_compare
+python scripts/bars_from_data_branch.py --pairs US500,US30,US2000,GER40,UK100,JP225,EURUSD,GBPUSD,USDJPY
+python scripts/run_dip_basket_check.py      # per-index inclusion on daily history (FRED / Yahoo)
+python scripts/run_variants.py --config strategy_dip_basket.yaml --stem dip_basket_compare
+
+# 1i) Trend following across FX, gold and indices: signal check on daily history (FRED / Yahoo)
+python scripts/run_tsmom_check.py
+python scripts/run_variants.py --config strategy_tsmom.yaml --stem tsmom_compare   # only if the check passes
+
+# 1j) Relative value on linked crosses (AUDNZD, EURGBP): FRED signal check
+python scripts/run_rv_check.py
+
+# 1k) Independent re-check of gj-strat's USDJPY gotobi / vol-box edges on its raw minute files
+python -I scripts/run_jpy_recheck.py --datastore ../techlvling/gj-strat/datastore
+
+# 1l) One account: USDJPY vol-gotobi + NAS100 NY breakout v3 + NAS100 dip (configs/portfolio_combo.yaml)
+python scripts/bars_from_data_branch.py --pairs NAS100   # also creates the data/_data_branch worktree
+(cd data/_data_branch && git lfs pull --include="parquet/NAS100_M5.parquet,parquet/NAS100_M5_ask.parquet")
+cp data/_data_branch/parquet/NAS100_M5.parquet data/_data_branch/parquet/NAS100_M5_ask.parquet data/parquet/
+python -I scripts/run_nykz_breakout.py                     # NY breakout v3 alone (bid/ask M5)
+python -I scripts/run_portfolio_combo.py --datastore ../techlvling/gj-strat/datastore
+
+# 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
+python scripts/run_macro_compare.py
+
+# 2b) Event study: pre / post / fade variants side by side
+python scripts/run_event_study.py
+python scripts/run_event_study.py --signal-mode nowcast_gap --tag cpi_nowcast
 
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
@@ -61,12 +117,12 @@ Outputs land under `reports/` (per-strategy JSON/CSV plus `batch_summary.json`).
 
 ```
 configs/          strategy + FTMO + cost YAMLs
-scripts/          download, backtest, prop sim, walk-forward, batch
+scripts/          download (bars, calendar, macro), backtest, prop sim, walk-forward, batch, event study, macro IC / compare
 src/              data, features, strategies, backtest, prop, research
 tests/
 mt5/              EA stubs only after promotion GO
 docs/             tracked research notes
-data/             local parquet + logs (ignored)
+data/             local parquet, events_calendar.csv, macro/ (ignored)
 reports/          local run outputs (ignored)
 ```
 

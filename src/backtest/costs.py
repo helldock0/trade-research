@@ -59,6 +59,35 @@ def pip_value_per_lot(symbol: str, price: float) -> float:
     return 10.0
 
 
+def is_cross(symbol: str) -> bool:
+    """FX pair without a USD leg (EURJPY, EURGBP, ...): its P&L is in a non-USD quote currency."""
+    sym = symbol.upper()
+    return len(sym) == 6 and sym.isalpha() and "USD" not in sym and "XAU" not in sym
+
+
+def contract_size(symbol: str, costs_cfg: dict[str, Any]) -> float | None:
+    """Units per lot for instruments under `contracts:` in costs.yaml (index CFDs: currency units per point per lot).
+
+    An entry is a number (USD) or {size, ccy}. None means the FX / gold defaults (100k units, 100 oz).
+    """
+    v = (costs_cfg.get("contracts") or {}).get(symbol.upper())
+    if v is None:
+        return None
+    return float(v["size"]) if isinstance(v, dict) else float(v)
+
+
+def contract_currency(symbol: str, costs_cfg: dict[str, Any]) -> str | None:
+    """P&L currency of a `contracts:` entry ({size, ccy}); None for plain (USD) entries and FX."""
+    v = (costs_cfg.get("contracts") or {}).get(symbol.upper())
+    return str(v.get("ccy", "USD")).upper() if isinstance(v, dict) else None
+
+
+def financing_pct(symbol: str, costs_cfg: dict[str, Any]) -> float | None:
+    """Yearly overnight financing (% of notional) for instruments under `financing_pct_per_year:` in costs.yaml."""
+    v = (costs_cfg.get("financing_pct_per_year") or {}).get(symbol.upper())
+    return float(v) if v is not None else None
+
+
 def position_size_lots(
     equity: float,
     risk_pct: float,
@@ -66,13 +95,24 @@ def position_size_lots(
     symbol: str,
     price: float,
     costs_cfg: dict[str, Any],
+    usd_per_quote: float | None = None,
+    contract: float | None = None,
 ) -> float:
+    """Lots risking risk_pct of equity over risk_price.
+
+    `usd_per_quote` (USD value of one unit of the quote currency) and `contract`
+    (units per lot) price the pip exactly; the engine passes them for crosses
+    and index CFDs, where pip_value_per_lot cannot.
+    """
     risk_cash = equity * (risk_pct / 100.0)
     pip = pip_size(symbol, costs_cfg)
     stop_pips = risk_price / pip
     if stop_pips <= 0:
         return 0.0
-    pv = pip_value_per_lot(symbol, price)
+    if usd_per_quote or contract:
+        pv = pip * (contract or 100000.0) * (usd_per_quote or 1.0)
+    else:
+        pv = pip_value_per_lot(symbol, price)
     if pv <= 0:
         return 0.0
     lots = risk_cash / (stop_pips * pv)

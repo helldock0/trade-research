@@ -1,0 +1,84 @@
+strategy: tsmom
+
+# Time-series momentum (trend following) across asset classes: long what has
+# risen over the past 12 months, short what has fallen, in FX, gold and equity
+# indices (Moskowitz, Ooi & Pedersen 2012; Hurst, Ooi & Pedersen 2017). Few
+# large trends carry the result, so trades are long and the average win is big.
+# Everything below was fixed on 2026-10-22 before any data was looked at.
+universe: [EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, NZDUSD, USDCHF, XAUUSD, US500, NAS100, GER40, UK100, JP225]
+conversion_pairs: [EURUSD, GBPUSD, USDJPY]   # GER40 / UK100 / JP225 P&L (already in the universe)
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  close_hour_utc: 21         # daily bars roll at 21:00 UTC (FX rollover) for every instrument
+
+signal:
+  lookback_days: 252         # sign of the return over the past 252 daily closes
+  # decisions on the last trading day of each month; a trade lasts until the sign flips
+  atr_period: 20
+  stop_atr_mult: 5.0         # catastrophe stop; the monthly sign flip is the exit
+  take_profit_r: 0
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 6
+  max_signed_corr: 0.7       # skip a trade that repeats an open one (e.g. two index longs)
+  corr_window_days: 60
+  soft_daily_halt_pct: 2.0
+
+# Holding costs for multi-month positions, merged over configs/costs.yaml for this
+# strategy only. Carry (the interest differential) is not modeled; a symmetric
+# markup stands in for FX / gold swaps. Indices keep costs.yaml's 6% a year.
+costs_overrides:
+  financing_pct_per_year: {EURUSD: 1.5, GBPUSD: 1.5, USDJPY: 1.5, AUDUSD: 1.5, USDCAD: 1.5, NZDUSD: 1.5, USDCHF: 1.5, XAUUSD: 1.5}
+
+# Signal check on daily history (scripts/run_tsmom_check.py), pre-registered.
+# Per instrument and month: sign(252-day return) x next month's return, divided
+# by the trailing 60-day volatility scaled to a month (a risk unit), minus a
+# 2 bp round trip each time the position changes and the financing above.
+# Portfolio = mean across the instruments available that month.
+# Pass: holdout portfolio mean > 0 with t >= 2.0; dev portfolio mean > 0.
+validation:
+  history:
+    EURUSD: fx_EURUSD        # FRED H.10 (cached by run_macro_ic.py); EUR from 1999
+    GBPUSD: fx_GBPUSD
+    USDJPY: fx_USDJPY
+    AUDUSD: fx_AUDUSD
+    USDCAD: fx_USDCAD
+    NZDUSD: fx_NZDUSD
+    USDCHF: fx_USDCHF
+    XAUUSD: YH_GC            # gold futures, 2000+
+    US500: YH_GSPC
+    NAS100: NASDAQ100
+    GER40: YH_GDAXI
+    UK100: YH_FTSE
+    JP225: NIKKEI225
+  fred_fx: {fx_EURUSD: DEXUSEU, fx_GBPUSD: DEXUSUK, fx_USDJPY: DEXJPUS, fx_AUDUSD: DEXUSAL, fx_USDCAD: DEXCAUS, fx_NZDUSD: DEXUSNZ, fx_USDCHF: DEXSZUS}
+  yahoo: {YH_GC: "GC=F", YH_GSPC: "^GSPC", YH_GDAXI: "^GDAXI", YH_FTSE: "^FTSE"}
+  holdout: ["1985-01-01", "2017-12-31"]
+  dev: ["2018-01-01", null]
+  min_t: 2.0
+  vol_window_days: 60
+  round_trip_cost_bp: 2.0
+  index_financing_pct_per_year: 6.0
+  fx_financing_pct_per_year: 1.5
+
+# Engine backtest (scripts/run_variants.py --config strategy_tsmom.yaml --stem tsmom_compare),
+# only if the signal check passes. `tsmom` is the decision row.
+variants:
+  tsmom: {}
+  tsmom_nogate:              # information only: every market may be open at once
+    risk: {max_open_positions: 13, max_signed_corr: null}
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

@@ -85,6 +85,13 @@ SYMBOL_TO_INSTRUMENT_ATTR = {
     "NZDCAD": "INSTRUMENT_FX_CROSSES_NZD_CAD",
     # Metals
     "XAUUSD": "INSTRUMENT_FX_METALS_XAU_USD",
+    # Indices (CFD)
+    "NAS100": "INSTRUMENT_IDX_AMERICA_E_NQ_100",
+    "US30": "INSTRUMENT_IDX_AMERICA_E_D_J_IND",
+    "US500": "INSTRUMENT_IDX_AMERICA_E_SANDP_500",
+    "GER40": "INSTRUMENT_IDX_EUROPE_E_DAAX",
+    "UK100": "INSTRUMENT_IDX_EUROPE_E_FUTSEE_100",
+    "JP225": "INSTRUMENT_IDX_ASIA_E_N225JAP",
 }
 
 # Fallback slash notation if instrument attr is missing.
@@ -133,10 +140,14 @@ INTERVAL_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {
 }
 
 
-def parquet_path(symbol: str, interval: str, cache_dir: Path | None = None) -> Path:
+def parquet_path(
+    symbol: str, interval: str, cache_dir: Path | None = None, side: str = "bid"
+) -> Path:
+    """Bid bars are `{SYMBOL}_{TF}.parquet`; ask bars add an `_ask` suffix."""
     ensure_dirs()
     base = cache_dir or (ROOT / "data" / "parquet")
-    return base / f"{symbol}_{interval}.parquet"
+    suffix = "_ask" if side == "ask" else ""
+    return base / f"{symbol}_{interval}{suffix}.parquet"
 
 
 def _resolve_instrument(symbol: str):
@@ -208,13 +219,17 @@ def fetch_symbol_ohlc(
     end: datetime,
     interval: str = "M15",
     sleep_s: float = 0.15,
+    side: str = "bid",
 ) -> pd.DataFrame:
     """Fetch OHLC from Dukascopy and return normalized frame."""
     import dukascopy_python
 
     duka_interval = _resolve_interval(interval)
     instrument = _resolve_instrument(symbol)
-    offer = getattr(dukascopy_python, "OFFER_SIDE_BID", "B")
+    if side == "ask":
+        offer = getattr(dukascopy_python, "OFFER_SIDE_ASK", "A")
+    else:
+        offer = getattr(dukascopy_python, "OFFER_SIDE_BID", "B")
 
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
@@ -278,6 +293,7 @@ def download_universe(
     force: bool = False,
     sleep_s: float = 0.15,
     continue_on_error: bool = True,
+    side: str = "bid",
 ) -> dict[str, Path]:
     """Download and cache Dukascopy OHLC for the strategy universe.
 
@@ -307,8 +323,8 @@ def download_universe(
     for interval in interval_list:
         for symbol in symbols:
             done += 1
-            path = parquet_path(symbol, interval, cache_dir)
-            key = f"{symbol}_{interval}"
+            path = parquet_path(symbol, interval, cache_dir, side=side)
+            key = f"{symbol}_{interval}" + ("_ask" if side == "ask" else "")
             if path.exists() and not force:
                 print(f"[skip] ({done}/{total}) {key} exists at {path}", flush=True)
                 paths[key] = path
@@ -319,7 +335,7 @@ def download_universe(
             )
             try:
                 df = fetch_symbol_ohlc(
-                    symbol, start_dt, end_dt, interval=interval, sleep_s=sleep_s
+                    symbol, start_dt, end_dt, interval=interval, sleep_s=sleep_s, side=side
                 )
                 if df.empty:
                     raise RuntimeError(f"No data returned for {key}")

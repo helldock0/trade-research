@@ -1,0 +1,33 @@
+# One account running three frozen lines (owner request, 2026-10-22):
+#   gotobi - USDJPY vol-gotobi short (configs/jpy_recheck.yaml: gotobi + vol_filter), net of $7/lot,
+#            0.2 pip per stop fill and carry swap; gj-strat's raw minute data
+#   nykz   - NAS100 NY kill-zone breakout v3 (configs/strategy_nykz_breakout.yaml, from branch
+#            ccr-26c72736-m6dn5o unchanged), real bid/ask spread; data branch NAS100 M5 bid/ask
+#   dip    - NAS100 buy the dip (configs/strategy_dip.yaml) through the engine, measured spread and
+#            index financing from configs/costs.yaml
+# Nothing is retuned; every leg runs its own config and costs and brings net R per trade.
+# Fixed on 2026-10-22 before the combined run (each leg had been run alone before).
+# Run: python -I scripts/run_portfolio_combo.py
+window: ["2018-01-01", "2026-10-07"]   # trades entered in this span (gj-strat's minute data ends 2026-10-07)
+initial_balance: 100000
+risk_per_trade_pct: 0.5                # every leg; % of the initial balance per 1R, no compounding
+
+legs:
+  gotobi: {symbol: USDJPY, config: jpy_recheck.yaml}
+  nykz: {symbol: NAS100, config: strategy_nykz_breakout.yaml}
+  dip: {symbol: NAS100, config: strategy_dip.yaml}
+
+variants:
+  independent: {}                      # every leg takes every signal (decision row)
+  same_side_gate:                      # skip a trade while another leg holds the same symbol in the
+    skip_same_symbol_side: true        # same direction (first come keeps it)
+
+# Judged by the repo's promotion gates (src/research/promote.py) on the combined trade list:
+# folds are consecutive 6-month windows from 2018-01-01 (nothing is trained, so every window
+# counts); Monte Carlo as in the repo (0.5% risk, +10% before -10%). FTMO 2-step replayed from the
+# first trade of every month (src/prop/ftmo_simulator.py), trades in exit order.
+folds_months: 6
+# Pass: all five gates pass for `independent`.
+# Caveat fixed in advance: the legs were each chosen with some of 2018-2026 in view (nykz picked on
+# 2023-26 after ~30 variants; gotobi's vol filter and dip's 2018+ dev run), so this is a check of the
+# combination, not a clean out-of-sample test.

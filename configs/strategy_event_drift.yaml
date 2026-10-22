@@ -1,0 +1,118 @@
+strategy: event_drift
+
+# Pairs loaded for the run; each event currency maps to one of these below.
+universe:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+  - USDCAD
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  asian_start: "00:00"
+  asian_end: "07:00"
+  london_start: "07:00"
+  london_end: "11:00"
+  ny_start: "13:30"
+  ny_end: "16:00"
+  overnight_anchor: "21:00"
+  friday_no_new_entries: "16:00"
+  friday_hard_flat: "20:00"
+
+signal:
+  # pre  = enter before the release, exit before the print (pure pricing-in)
+  # post = same entry, hold through the print, exit after it
+  # fade = enter after the print against the reaction (when it went the signal's way)
+  variant: pre
+  # surprise_momentum | nowcast_gap | combined (nowcast where available, else momentum)
+  signal_mode: surprise_momentum
+  surprise_k: 2            # prior standardized surprises averaged into the signal
+  min_history: 6           # prior releases needed before a series is tradable
+  std_window: 36           # rolling window for the point-in-time surprise std
+  min_abs_z: 0.5           # ignore weak signals
+  entry_hours_before: 48
+  pre_exit_margin_min: 30  # pre variant: be flat this many minutes before the print
+  post_hold_min: 60        # post variant: exit this many minutes after the print
+  fade_entry_min: 15
+  fade_hold_min: 240
+  fade_require_signal: true
+  entry_blackout_min: 60   # skip entries within this many minutes of another high-impact release
+  pairs_per_event: 1
+  atr_period: 20
+  stop_atr_mult: 1.5
+  take_profit_r: 50.0      # effectively no TP; the scheduled exit governs
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 5
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+# Account type matters for the post variant: FTMO standard funded accounts block
+# opening/closing within 2 minutes of selected releases; swing accounts and the
+# evaluation phases do not. Entries here are hours before and exits an hour after.
+account:
+  type: swing
+
+events:
+  calendar_csv: data/events_calendar.csv   # scripts/download_calendar.py
+  min_impact: high                         # used only when `list` is empty
+  currency_pairs:
+    USD: [EURUSD]
+    EUR: [EURUSD]
+    GBP: [GBPUSD]
+    JPY: [USDJPY]
+    AUD: [AUDUSD]
+    CAD: [USDCAD]
+  # Exact FXStreet names. polarity -1 = higher print is bad for the currency.
+  # country / preliminary narrow a name to one series: FXStreet files member-state
+  # prints under the shared currency and lists flash (preliminary) and final
+  # releases under the same name. The flash is the one the market trades.
+  list:
+    - {currency: USD, name: "Consumer Price Index (MoM)"}
+    - {currency: USD, name: "Consumer Price Index ex Food & Energy (MoM)"}
+    - {currency: USD, name: "Core Personal Consumption Expenditures - Price Index (MoM)"}
+    - {currency: USD, name: "Nonfarm Payrolls"}
+    - {currency: USD, name: "Unemployment Rate", polarity: -1}
+    - {currency: USD, name: "Average Hourly Earnings (MoM)"}
+    - {currency: USD, name: "Retail Sales (MoM)"}
+    - {currency: USD, name: "ISM Manufacturing PMI"}
+    - {currency: USD, name: "ISM Services PMI"}
+    - {currency: USD, name: "Gross Domestic Product Annualized", preliminary: true}
+    - {currency: EUR, name: "Harmonized Index of Consumer Prices (YoY)", country: EMU, preliminary: true}
+    - {currency: EUR, name: "Core Harmonized Index of Consumer Prices (YoY)", country: EMU, preliminary: true}
+    - {currency: GBP, name: "Consumer Price Index (YoY)"}
+    - {currency: GBP, name: "Core Consumer Price Index (YoY)"}
+    - {currency: GBP, name: "Retail Sales (MoM)"}
+    - {currency: GBP, name: "Claimant Count Change", polarity: -1}
+    - {currency: CAD, name: "Consumer Price Index (YoY)"}
+    - {currency: CAD, name: "Net Change in Employment"}
+    - {currency: CAD, name: "Unemployment Rate", polarity: -1}
+    - {currency: AUD, name: "Employment Change s.a."}
+    - {currency: AUD, name: "Unemployment Rate s.a.", polarity: -1}
+    - {currency: AUD, name: "Quarterly Consumer Price Index (QoQ)"}
+    - {currency: AUD, name: "Consumer Price Index (YoY)"}
+
+# Point-in-time headline CPI nowcast from weekly retail gasoline (FRED GASREGW).
+nowcast:
+  enabled: true
+  gasoline_series: GASREGW
+  currency: USD
+  cpi_event: "Consumer Price Index (MoM)"
+  weight: 0.035
+  baseline_n: 6
+  # Optional user-supplied forecasts (Cleveland Fed vintages, prediction-market
+  # implied values, ...): CSV with timestamp,currency,event,nowcast[,country,preliminary].
+  # Rows override the gasoline model for the same release. Must be point-in-time.
+  external_csv: null
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

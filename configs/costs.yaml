@@ -25,6 +25,60 @@ pairs:
     half_spread_pips: 0.8
     slippage_pips: 0.25
     commission_per_lot_usd: 7.0
+  NZDUSD:
+    half_spread_pips: 0.8
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+  USDCHF:
+    half_spread_pips: 0.8
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+  # crosses: wider than the majors (conservative retail/prop estimates)
+  EURJPY:
+    half_spread_pips: 0.9
+    slippage_pips: 0.3
+    commission_per_lot_usd: 7.0
+  GBPJPY:
+    half_spread_pips: 1.3
+    slippage_pips: 0.4
+    commission_per_lot_usd: 7.0
+  AUDJPY:
+    half_spread_pips: 0.9
+    slippage_pips: 0.3
+    commission_per_lot_usd: 7.0
+  EURGBP:
+    half_spread_pips: 0.8
+    slippage_pips: 0.25
+    commission_per_lot_usd: 7.0
+  # USD index CFDs: "pips" are index points (pip_size 1.0), no commission
+  NAS100:
+    half_spread_pips: 1.0
+    slippage_pips: 0.5
+    commission_per_lot_usd: 0.0
+  US500:
+    half_spread_pips: 0.3
+    slippage_pips: 0.2
+    commission_per_lot_usd: 0.0
+  US30:                      # Dukascopy spread near the US close: ~2.3 points
+    half_spread_pips: 1.2
+    slippage_pips: 0.6
+    commission_per_lot_usd: 0.0
+  US2000:                    # no ask file on the data branch: conservative guess
+    half_spread_pips: 0.3
+    slippage_pips: 0.2
+    commission_per_lot_usd: 0.0
+  GER40:                     # measured spread at the Xetra close ~1.4 points
+    half_spread_pips: 0.8
+    slippage_pips: 0.5
+    commission_per_lot_usd: 0.0
+  UK100:                     # measured at the London close ~1.0 point
+    half_spread_pips: 0.6
+    slippage_pips: 0.4
+    commission_per_lot_usd: 0.0
+  JP225:                     # measured at the Tokyo close ~7.1 points
+    half_spread_pips: 4.0
+    slippage_pips: 2.0
+    commission_per_lot_usd: 0.0
   XAUUSD:
     half_spread_pips: 20.0
     slippage_pips: 5.0
@@ -36,4 +90,38 @@ pip_size:
   USDJPY: 0.01
   AUDUSD: 0.0001
   USDCAD: 0.0001
+  NZDUSD: 0.0001
+  USDCHF: 0.0001
+  EURJPY: 0.01
+  GBPJPY: 0.01
+  AUDJPY: 0.01
+  EURGBP: 0.0001
+  NAS100: 1.0
+  US500: 1.0
+  US30: 1.0
+  US2000: 1.0
+  GER40: 1.0
+  UK100: 1.0
+  JP225: 1.0
   XAUUSD: 0.01
+
+# Units per lot where it is not 100k FX / 100 oz gold: USD index CFDs at $1 per point per lot
+contracts:
+  NAS100: 1.0
+  US500: 1.0
+  US30: 1.0
+  US2000: 1.0
+  GER40: {size: 1.0, ccy: EUR}   # P&L in EUR, converted through EURUSD
+  UK100: {size: 1.0, ccy: GBP}
+  JP225: {size: 1.0, ccy: JPY}
+
+# Overnight financing on multi-day holds, % of notional a year over calendar time
+# (added 2026-10-22 for the dip test; turn-of-the-month runs before it had none)
+financing_pct_per_year:
+  NAS100: 6.0
+  US500: 6.0
+  US30: 6.0
+  US2000: 6.0
+  GER40: 6.0
+  UK100: 6.0
+  JP225: 6.0

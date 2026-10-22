@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -8,10 +9,15 @@ import pandas as pd
 
 from src.backtest.costs import (
     commission_usd,
+    contract_currency,
+    contract_size,
     entry_fill_price,
+    financing_pct,
     exit_fill_price,
+    is_cross,
     position_size_lots,
 )
+from src.backtest.correlation import CorrelationGate
 from src.data.bars import ensure_utc_index
 from src.features.sessions import is_friday, parse_hhmm
 from src.strategy.cssm import Signal
@@ -74,10 +80,45 @@ def maybe_move_stop_to_breakeven(
     return stop, False
 
 
-def stop_exit_reason(side: int, stop: float, entry: float, be_armed: bool) -> str:
+def usd_per_unit(ccy: str, ts: pd.Timestamp, closes: dict[str, pd.Series]) -> float:
+    """USD value of one unit of `ccy` at ts, from the USD major among the bars (last close at or before ts)."""
+    if ccy == "USD":
+        return 1.0
+    for sym, inverse in ((f"{ccy}USD", False), (f"USD{ccy}", True)):
+        s = closes.get(sym)
+        if s is not None and len(s):
+            v = float(s.asof(ts))
+            if v > 0:
+                return 1.0 / v if inverse else v
+    raise ValueError(f"no {ccy}USD or USD{ccy} bars to convert {ccy} P&L to USD")
+
+
+def financing_usd(position: dict[str, Any], exit_ts: pd.Timestamp, costs_cfg: dict[str, Any]) -> float:
+    """Overnight financing over the calendar time held, for instruments that configure it (index CFDs)."""
+    rate = financing_pct(position["symbol"], costs_cfg)
+    if not rate:
+        return 0.0
+    days = (pd.Timestamp(exit_ts) - pd.Timestamp(position["entry_time"])) / pd.Timedelta(days=1)
+    notional = position["entry_price"] * position["lots"] * (contract_size(position["symbol"], costs_cfg) or 100000.0) * position.get("usd_per_quote", 1.0)
+    return notional * rate / 100.0 * max(days, 0.0) / 365.0
+
+
+def stop_exit_reason(side: int, stop: float, entry: float, be_armed: bool, trailed: bool = False) -> str:
     if be_armed and abs(stop - entry) < 1e-12:
         return "breakeven_stop"
+    if trailed:
+        return "trail_stop"
     return "stop"
+
+
+def trail_stop(side: int, stop: float, best: float, distance: float) -> tuple[float, bool]:
+    """Ratchet the stop to `distance` behind the best price since entry. Returns (stop, moved)."""
+    if distance <= 0:
+        return stop, False
+    cand = best - side * distance
+    if (side > 0 and cand > stop) or (side < 0 and cand < stop):
+        return cand, True
+    return stop, False
 
 
 def run_backtest(
@@ -103,19 +144,34 @@ def run_backtest(
     )
     london_end = parse_hhmm(sessions_cfg["london_end"])
     ny_end = parse_hhmm(sessions_cfg["ny_end"])
-    exit_mode = str(strategy_cfg.get("signal", {}).get("exit_mode", "session"))
-    breakeven_at_r = float(strategy_cfg.get("signal", {}).get("breakeven_at_r", 0.0))
-    allow_weekend_hold = bool(strategy_cfg.get("signal", {}).get("allow_weekend_hold", False))
-    max_hold_days = int(strategy_cfg.get("signal", {}).get("max_hold_days", 0) or 0)
+    sig_cfg = strategy_cfg.get("signal", {})
+    exit_mode = str(sig_cfg.get("exit_mode", "session"))
+    breakeven_at_r = float(sig_cfg.get("breakeven_at_r", 0.0))
+    allow_weekend_hold = bool(sig_cfg.get("allow_weekend_hold", False))
+    max_hold_days = int(sig_cfg.get("max_hold_days", 0) or 0)
+    # take_profit_r <= 0 (or null): no fixed target
+    tp_r = float(sig_cfg.get("take_profit_r") or 0.0)
+    # trailing_stop_r > 0: after each bar, ratchet the stop to this many R behind the best price
+    trail_r = float(sig_cfg.get("trailing_stop_r") or 0.0)
 
     bars = {s: ensure_utc_index(df) for s, df in bars_by_symbol.items()}
+    closes = {s: b["close"] for s, b in bars.items()}
+
+    def quote_usd(sym: str, at: pd.Timestamp) -> float | None:
+        # crosses and non-USD index CFDs convert their P&L through the USD major; other pairs keep the fixed formulas
+        if is_cross(sym):
+            return usd_per_unit(sym.upper()[3:6], at, closes)
+        ccy = contract_currency(sym, costs_cfg)
+        return usd_per_unit(ccy, at, closes) if ccy and ccy != "USD" else None
+
     balance = initial_balance
     equity = initial_balance
     trades: list[Trade] = []
     equity_points: list[tuple[pd.Timestamp, float]] = []
 
-    # Max 1 global position
-    position: dict[str, Any] | None = None
+    # Up to max_open positions, one per symbol; extra positions pass the correlation gate
+    positions: list[dict[str, Any]] = []
+    corr_gate = CorrelationGate.from_config(strategy_cfg["risk"], bars) if max_open > 1 else None
 
     day_start_equity = initial_balance
     current_day = None
@@ -138,105 +194,120 @@ def run_backtest(
         if day_pnl_pct <= -soft_daily:
             halted_today = True
 
-        # Manage open position
-        if position is not None:
+        # Manage open positions
+        still_open: list[dict[str, Any]] = []
+        for position in positions:
             sym = position["symbol"]
             bar = bars[sym].loc[ts] if ts in bars[sym].index else None
-            if bar is not None:
-                high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
-                side = position["side"]
-                entry = float(position["entry_price"])
-                risk_price = float(position["risk_price"])
-                tp = position["take_profit"]
-                be_armed = bool(position.get("be_armed", False))
-                stop = float(position["stop"])
+            if bar is None:
+                still_open.append(position)
+                continue
+            high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
+            side = position["side"]
+            entry = float(position["entry_price"])
+            risk_price = float(position["risk_price"])
+            tp = position["take_profit"]
+            has_tp = not math.isnan(tp)
+            be_armed = bool(position.get("be_armed", False))
+            trailed = bool(position.get("trailed", False))
+            stop = float(position["stop"])
 
-                exit_mid = None
-                reason = None
+            exit_mid = None
+            reason = None
 
-                # Intrabar stop/tp with stop from prior bars (no same-bar BE lookahead)
-                if side > 0:
-                    if low <= stop:
-                        exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed)
-                    elif high >= tp:
-                        exit_mid, reason = tp, "tp"
+            # Intrabar stop/tp with stop from prior bars (no same-bar BE / trail lookahead)
+            if side > 0:
+                if low <= stop:
+                    exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed, trailed)
+                elif has_tp and high >= tp:
+                    exit_mid, reason = tp, "tp"
+            else:
+                if high >= stop:
+                    exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed, trailed)
+                elif has_tp and low <= tp:
+                    exit_mid, reason = tp, "tp"
+
+            # Session / Friday time stops (skipped in swing mode)
+            sess = position["session"]
+            if exit_mode != "swing":
+                if exit_mode == "hold_to_ny":
+                    end_t = ny_end
                 else:
-                    if high >= stop:
-                        exit_mid, reason = stop, stop_exit_reason(side, stop, entry, be_armed)
-                    elif low <= tp:
-                        exit_mid, reason = tp, "tp"
-
-                # Session / Friday time stops (skipped in swing mode)
-                sess = position["session"]
-                if exit_mode != "swing":
-                    if exit_mode == "hold_to_ny":
-                        end_t = ny_end
-                    else:
-                        end_t = ny_end if sess == "ny" else london_end
-                    if reason is None and ts.time() >= end_t:
-                        exit_mid, reason = close, "session_end"
-                    if (
-                        reason is None
-                        and not allow_weekend_hold
-                        and friday_flat is not None
-                        and is_friday(ts)
-                        and ts.time() >= friday_flat
-                    ):
-                        exit_mid, reason = close, "friday_flat"
-
-                # Max calendar-day hold (swing safety)
+                    end_t = ny_end if sess == "ny" else london_end
+                if reason is None and ts.time() >= end_t:
+                    exit_mid, reason = close, "session_end"
                 if (
                     reason is None
-                    and max_hold_days > 0
-                    and (ts.normalize() - position["entry_time"].normalize()).days
-                    >= max_hold_days
+                    and not allow_weekend_hold
+                    and friday_flat is not None
+                    and is_friday(ts)
+                    and ts.time() >= friday_flat
                 ):
-                    exit_mid, reason = close, "max_hold"
+                    exit_mid, reason = close, "friday_flat"
 
-                # After surviving the bar, arm breakeven from close for subsequent bars
-                if reason is None:
-                    new_stop, be_armed = maybe_move_stop_to_breakeven(
-                        side,
-                        entry,
-                        stop,
-                        close,
-                        risk_price,
-                        breakeven_at_r,
-                        already_be=be_armed,
-                    )
-                    position["stop"] = new_stop
-                    position["be_armed"] = be_armed
-                    stop = new_stop
+            # Max calendar-day hold (swing safety)
+            if (
+                reason is None
+                and max_hold_days > 0
+                and (ts.normalize() - position["entry_time"].normalize()).days
+                >= max_hold_days
+            ):
+                exit_mid, reason = close, "max_hold"
 
-                if reason is not None:
-                    fill = exit_fill_price(side, exit_mid, sym, costs_cfg)
-                    lots = position["lots"]
-                    pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym)
-                    comm = commission_usd(lots, sym, costs_cfg)
-                    pnl -= comm
-                    r_mult = pnl / (initial_balance * risk_pct / 100.0)
+            # Scheduled time exit (event studies): close at first bar >= exit_time
+            exit_at = position.get("exit_time")
+            if reason is None and exit_at is not None and ts >= exit_at:
+                exit_mid, reason = close, "time_exit"
 
-                    trades.append(
-                        Trade(
-                            symbol=sym,
-                            side=side,
-                            entry_time=position["entry_time"],
-                            exit_time=ts,
-                            entry_price=position["entry_price"],
-                            exit_price=fill,
-                            stop=stop,
-                            take_profit=tp,
-                            lots=lots,
-                            pnl_usd=pnl,
-                            r_multiple=r_mult,
-                            session=sess,
-                            exit_reason=reason,
-                            commission=comm,
-                        )
-                    )
-                    balance += pnl
-                    equity = balance
-                    position = None
+            # After surviving the bar, arm breakeven / trail from this bar for subsequent bars
+            if reason is None:
+                new_stop, be_armed = maybe_move_stop_to_breakeven(
+                    side,
+                    entry,
+                    stop,
+                    close,
+                    risk_price,
+                    breakeven_at_r,
+                    already_be=be_armed,
+                )
+                if trail_r > 0:
+                    best = max(position["best"], high) if side > 0 else min(position["best"], low)
+                    position["best"] = best
+                    new_stop, moved = trail_stop(side, new_stop, best, trail_r * risk_price)
+                    position["trailed"] = trailed or moved
+                position["stop"] = new_stop
+                position["be_armed"] = be_armed
+                still_open.append(position)
+                continue
+
+            fill = exit_fill_price(side, exit_mid, sym, costs_cfg)
+            lots = position["lots"]
+            pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, ts), contract_size(sym, costs_cfg))
+            comm = commission_usd(lots, sym, costs_cfg)
+            pnl -= comm + financing_usd(position, ts, costs_cfg)
+            r_mult = pnl / (initial_balance * risk_pct / 100.0)
+
+            trades.append(
+                Trade(
+                    symbol=sym,
+                    side=side,
+                    entry_time=position["entry_time"],
+                    exit_time=ts,
+                    entry_price=position["entry_price"],
+                    exit_price=fill,
+                    stop=stop,
+                    take_profit=tp,
+                    lots=lots,
+                    pnl_usd=pnl,
+                    r_multiple=r_mult,
+                    session=sess,
+                    exit_reason=reason,
+                    commission=comm,
+                )
+            )
+            balance += pnl
+            equity = balance
+        positions = still_open
 
         equity_points.append((ts, equity))
 
@@ -244,7 +315,7 @@ def run_backtest(
         while sig_i < len(signals) and signals[sig_i].timestamp <= ts:
             sig = signals[sig_i]
             sig_i += 1
-            if position is not None:
+            if len(positions) >= max_open:
                 continue
             if halted_today:
                 continue
@@ -258,7 +329,9 @@ def run_backtest(
             if sig.timestamp != ts:
                 # fill only on signal bar close
                 continue
-            if max_open < 1:
+            if any(p["symbol"] == sig.symbol for p in positions):
+                continue
+            if corr_gate is not None and not corr_gate.allows(sig.symbol, sig.side, positions, ts):
                 continue
 
             fill = entry_fill_price(sig.side, sig.entry, sig.symbol, costs_cfg)
@@ -266,41 +339,44 @@ def run_backtest(
             risk_price = abs(fill - sig.stop)
             if risk_price <= 0:
                 continue
-            if sig.side > 0:
-                tp = fill + float(strategy_cfg["signal"]["take_profit_r"]) * risk_price
-            else:
-                tp = fill - float(strategy_cfg["signal"]["take_profit_r"]) * risk_price
+            tp = fill + sig.side * tp_r * risk_price if tp_r > 0 else float("nan")
 
             lots = position_size_lots(
-                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg
+                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg, quote_usd(sig.symbol, ts), contract_size(sig.symbol, costs_cfg)
             )
             if lots <= 0:
                 continue
 
-            position = {
-                "symbol": sig.symbol,
-                "side": sig.side,
-                "entry_time": ts,
-                "entry_price": fill,
-                "stop": sig.stop,
-                "take_profit": tp,
-                "lots": lots,
-                "session": sig.session,
-                "risk_price": risk_price,
-                "be_armed": False,
-            }
+            positions.append(
+                {
+                    "symbol": sig.symbol,
+                    "side": sig.side,
+                    "entry_time": ts,
+                    "entry_price": fill,
+                    "stop": sig.stop,
+                    "take_profit": tp,
+                    "lots": lots,
+                    "session": sig.session,
+                    "risk_price": risk_price,
+                    "be_armed": False,
+                    "trailed": False,
+                    "best": fill,
+                    "usd_per_quote": quote_usd(sig.symbol, ts) or 1.0,
+                    "exit_time": getattr(sig, "exit_time", None),
+                }
+            )
 
-    # Force close leftover
-    if position is not None:
+    # Force close leftovers
+    for position in positions:
         sym = position["symbol"]
         last_ts = bars[sym].index[-1]
         close = float(bars[sym].iloc[-1]["close"])
         fill = exit_fill_price(position["side"], close, sym, costs_cfg)
         lots = position["lots"]
         side = position["side"]
-        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym)
+        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, last_ts), contract_size(sym, costs_cfg))
         comm = commission_usd(lots, sym, costs_cfg)
-        pnl -= comm
+        pnl -= comm + financing_usd(position, last_ts, costs_cfg)
         trades.append(
             Trade(
                 symbol=sym,
@@ -335,10 +411,20 @@ def run_backtest(
     return result
 
 
-def _pnl_usd(side: int, entry: float, exit_px: float, lots: float, symbol: str) -> float:
-    """Approximate USD P&L (FX 100k lots; XAU 100 oz)."""
+def _pnl_usd(
+    side: int,
+    entry: float,
+    exit_px: float,
+    lots: float,
+    symbol: str,
+    usd_per_quote: float | None = None,
+    contract: float | None = None,
+) -> float:
+    """Approximate USD P&L (FX 100k lots; XAU 100 oz); exact when `usd_per_quote` / `contract` are given."""
     sym = symbol.upper()
     diff = (exit_px - entry) if side > 0 else (entry - exit_px)
+    if usd_per_quote is not None or contract is not None:
+        return diff * lots * (contract or 100000.0) * (usd_per_quote if usd_per_quote is not None else 1.0)
     if "XAU" in sym:
         return diff * lots * 100.0
     if sym.endswith("JPY"):

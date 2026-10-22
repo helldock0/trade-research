@@ -1,0 +1,32 @@
+# Asian kill-zone range, traded in the New York session — NAS100 M5, real bid/ask spread
+# Range = high/low of 20:00-00:00 New York (5:30-9:30 AM IST in US summer,
+# 6:30-10:30 AM IST in winter); entries 08:00-16:55 New York. Entry, stop and
+# target as NY kill-zone v3: next candle confirms, 2x ATR stop, 4R.
+# break_mode: close_beyond (continuation) | fresh (must re-enter the range
+# first) | sweep_reversal (trade back into the range after a sweep).
+# Run: python scripts/run_nykz_breakout.py --config strategy_asiakz_ny.yaml
+strategy: asiakz_ny
+
+symbol: NAS100
+timeframe: M5
+
+session:
+  timezone: America/New_York
+  range_start: "20:00"   # previous New York evening
+  range_end: "00:00"
+  entry_start: "08:00"   # 17:30 IST (US summer) / 18:30 IST (winter)
+  entry_cutoff: "16:55"  # 02:25 IST (US summer) / 03:25 IST (winter); CFD closes 16:15 NY
+
+signal:
+  min_range_bars: 40       # full range = 48 bars
+  stop_buffer_points: 2.0  # break-candle stop, still used to skip entries that close beyond it
+  take_profit_r: 4.0
+  confirm_close: true
+  atr_period: 14
+  atr_stop_mult: 2.0
+  break_mode: close_beyond
+
+data:
+  start: "2023-01-01"
+  end: null
+  cache_dir: data/parquet

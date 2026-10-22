@@ -16,6 +16,13 @@ KNOWN_STRATEGIES: tuple[str, ...] = (
     "donchian_atr",
     "xau_htf_pullback",
     "htf_adx_pullback",
+    "event_drift",
+    "macro_swing",
+    "tom",
+    "imom",
+    "dip",
+    "tsmom",
+    "rv",
 )
 
 
@@ -70,6 +77,34 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
         from src.strategy.htf_adx_pullback import generate_signals
 
         return generate_signals
+    if sid in ("event_drift", "event"):
+        from src.strategy.event_drift import generate_signals
+
+        return generate_signals
+    if sid in ("rv", "relative_value"):
+        from src.strategy.rv import generate_signals
+
+        return generate_signals
+    if sid in ("tsmom", "trend"):
+        from src.strategy.tsmom import generate_signals
+
+        return generate_signals
+    if sid in ("dip", "buy_the_dip"):
+        from src.strategy.dip import generate_signals
+
+        return generate_signals
+    if sid in ("imom", "intraday_momentum"):
+        from src.strategy.imom import generate_signals
+
+        return generate_signals
+    if sid in ("tom", "turn_of_month"):
+        from src.strategy.tom import generate_signals
+
+        return generate_signals
+    if sid in ("macro_swing", "macro"):
+        from src.strategy.macro_swing import generate_signals
+
+        return generate_signals
     from src.strategy.cssm import generate_signals
 
     return generate_signals
@@ -97,4 +132,18 @@ def default_config_name(strategy: str | None = None) -> str:
         return "strategy_xau_htf_pullback.yaml"
     if s in ("htf_adx_pullback", "htf_adx", "adx_pullback"):
         return "strategy_htf_adx_pullback.yaml"
+    if s in ("event_drift", "event"):
+        return "strategy_event_drift.yaml"
+    if s in ("macro_swing", "macro"):
+        return "strategy_macro_swing.yaml"
+    if s in ("tom", "turn_of_month"):
+        return "strategy_tom.yaml"
+    if s in ("imom", "intraday_momentum"):
+        return "strategy_imom.yaml"
+    if s in ("dip", "buy_the_dip"):
+        return "strategy_dip.yaml"
+    if s in ("tsmom", "trend"):
+        return "strategy_tsmom.yaml"
+    if s in ("rv", "relative_value"):
+        return "strategy_rv.yaml"
     return "strategy_cssm.yaml"

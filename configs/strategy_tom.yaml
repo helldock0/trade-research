@@ -1,0 +1,60 @@
+strategy: tom
+
+# Turn of the month: US equity indices tend to rise from the last trading day
+# of a month through the first three trading days of the next (Ariel 1987;
+# Lakonishok & Smidt 1988; McConnell & Xu 2008). Long only, one window a month.
+# Everything below was fixed on 2026-10-22 before any data was looked at.
+universe:
+  - NAS100                   # traded; matches the NASDAQ-100 history used for the signal check
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  exchange_tz: America/New_York
+  cash_close: "16:00"        # entries and exits at the bar ending at the US cash close
+
+signal:
+  days_before: 1             # in at the close of trading day -2: hold the last day of the month
+  days_after: 3              # out at the close of the 3rd trading day of the new month
+  calendar_series: NASDAQ100 # US trading days (FRED dates, cached by scripts/run_tom_check.py)
+  atr_period: 20             # daily ATR from the cash-close sessions
+  stop_atr_mult: 2.0         # protective stop only; the calendar exit governs
+  take_profit_r: 0           # no target
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+# Signal check on FRED daily closes (scripts/run_tom_check.py), pre-registered:
+# the mean daily log return on turn-of-month days minus that on all other days
+# must have Welch t >= 2.0 on the primary series over the holdout, and be
+# positive on the dev window for every series. Only then are bars run.
+validation:
+  series: [NASDAQCOM, NASDAQ100]   # primary first
+  holdout: [null, "2017-12-31"]
+  dev: ["2018-01-01", null]
+  min_t: 2.0
+
+# Bar backtest (scripts/run_tom_backtest.py), pre-registered on 2026-10-22 after
+# the signal check and before any bar run: `tom` counts only if it clears the
+# promotion gates AND its OOS expectancy beats `placebo` (same rules, mid-month
+# window), which measures the index's plain upward drift.
+variants:
+  tom: {}
+  placebo:
+    signal: {placebo_start_day: 9}
+  tom_us500:                 # cross-check on the S&P 500 CFD, not a separate bet
+    universe: [US500]
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

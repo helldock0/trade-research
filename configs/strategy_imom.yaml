@@ -1,0 +1,67 @@
+strategy: imom
+
+# Market intraday momentum: the index's return so far today predicts its last
+# half hour (Gao, Han, Li & Zhou 2018, JFE; Baltussen, Da, Lammers & Martens
+# 2021, JFE: dealers' gamma hedging and leveraged-ETF rebalancing trade in the
+# direction of the day's move into the close). One trade per trading day.
+# Everything below was fixed on 2026-10-22 before any data was looked at.
+universe:
+  - US500                    # primary: closest to the SPY / S&P futures of the literature
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  exchange_tz: America/New_York
+
+signal:
+  mode: day                  # day: prev 16:00 close -> 15:30 | first: prev close -> 10:00 (Gao) | long: always long (placebo)
+  entry_time: "15:30"        # exchange time; entry at the close of the bar ending here
+  exit_time: "16:00"         # exit at the close of the bar ending here
+  strong_only: false         # true: only days with |signal| >= its median over the prior 60 days
+  strong_lookback: 60
+  calendar_series: NASDAQ100 # US trading days (FRED dates)
+  range_lookback: 20         # stop = stop_range_mult x mean 15:30-16:00 range of the prior 20 days
+  stop_range_mult: 1.0
+  take_profit_r: 0
+  breakeven_at_r: 0.0
+  exit_mode: swing           # no session exits: the 16:00 exit governs
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+# Signal check on the bars, net of round-trip costs from configs/costs.yaml
+# (scripts/run_imom_check.py), pre-registered. No intraday data before 2018
+# here, so the bars are split in time: dev 2018-2021, holdout 2022+. Primary =
+# US500, mode day, all days. Pass: net mean > 0 on dev; net mean > 0 with t >=
+# 2.0 on the holdout; and the holdout net mean beats always-long over the same
+# half hour (the placebo). Only then does the engine backtest count.
+validation:
+  dev: ["2018-01-01", "2021-12-31"]
+  holdout: ["2022-01-01", null]
+  min_t: 2.0
+  cross_checks: [NAS100, US30]
+
+# Engine backtest (scripts/run_variants.py --config strategy_imom.yaml --stem imom_compare).
+# `imom` is the decision row; the others are reported, not decisive.
+variants:
+  imom: {}
+  imom_strong:
+    signal: {strong_only: true}
+  imom_first:
+    signal: {mode: first}
+  always_long:
+    signal: {mode: long}
+  imom_nas100:
+    universe: [NAS100]
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet
