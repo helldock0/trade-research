@@ -31,9 +31,11 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | `tsmom` | Time-series momentum (sign of the 12-month return, held until it flips) across 7 FX majors, gold and 5 index CFDs. Signal check on daily history, vol-scaled and net of costs: 1985–2017 +0.043 a month (t 1.61) and 2018+ −0.090 (t −1.78). Fails both conditions, so no bar run. See "Trend following" below. | NO-GO |
 
+| `rv` | Relative-value band mean reversion on AUDNZD and EURGBP (2σ from the 20-day mean, out at the mean or after 20 days). FRED signal check, pooled and net of costs: holdout −0.029% a trade (t −0.39, n 501), 2018+ +0.063% (t 0.78). Wins 60% but loses more on the losers, so no bar run. See "Relative value" below. | NO-GO |
+
 ## Active
 
-None. The fundamentals lines, turn of the month, intraday momentum, buy-the-dip (single index and basket) and trend following are all rejected (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
+None. The fundamentals lines, turn of the month, intraday momentum, buy-the-dip (single index and basket), trend following and relative value are all rejected (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -386,6 +388,29 @@ Alignment fix after the first run (disclosed): the first run averaged markets by
 
 **Verdict: NO-GO.** Per the plan, no bar backtest was run. The strategy (`src/strategy/tsmom.py`, tested) and the gold M15 bars are ready if a narrower, pre-registered trend hypothesis is ever tested.
 
+### Relative value on linked crosses (2026-10-22, new idea)
+
+Hypothesis: crosses of tightly linked economies swing back to their recent average. The rules, fixed in `configs/strategy_rv.yaml` before the data was looked at:
+- When the daily close is 2σ from its 20-day mean, trade back toward the mean. Exit at the first close back across the mean, or after 20 days.
+- Pairs: AUDNZD and EURGBP. EURCHF is excluded because of the 2011–2015 peg.
+- Signal check (`python scripts/run_rv_check.py` → `reports/rv_check.md`) on FRED daily rates, with each cross built from its USD legs. Costs are 3 bp (AUDNZD) or 2 bp (EURGBP) per round trip plus 1.5% a year financing.
+- Rule: pooled holdout trades (AUDNZD 1986–2017, EURGBP 1999–2017) have mean > 0 with t ≥ 2, and pooled 2018+ > 0.
+
+| Window | Pair | Trades | Mean net % | t | Hit |
+|---|---|---|---|---|---|
+| holdout | pooled | 501 | −0.029 | −0.39 | 0.60 |
+| holdout | AUDNZD | 322 | −0.033 | −0.36 | 0.60 |
+| holdout | EURGBP | 179 | −0.021 | −0.17 | 0.61 |
+| 2018+ | pooled | 176 | +0.063 | 0.78 | 0.61 |
+| 2018+ | AUDNZD | 87 | −0.066 | −0.63 | 0.54 |
+| 2018+ | EURGBP | 89 | +0.189 | 1.54 | 0.69 |
+
+- Typical band reversion: about 60% winners, but the losers (worst −5.4%) give back the gains.
+- AUDNZD reverted in the 1980s–90s and has not since the 2000s.
+- EURGBP is positive in every year since 2018 but flat over 1999–2017. Choosing it now would be selecting on the dev window.
+
+**Verdict: NO-GO.** Per the plan, no bar run. The strategy (`src/strategy/rv.py`, tested) is ready for a future pre-registered test.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -398,4 +423,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 5b. Intraday momentum is NO-GO: below costs before 2022, gone after. `scripts/run_variants.py` runs any config's `variants:`.
 5c. Buy the dip is NO-GO by the gates but has a real, thin edge. More indices were tried: only US ones pass, so the basket is about one bet. The remaining lever is risk sizing, which is the owner's call.
 5d. Trend following across FX / gold / indices is NO-GO: weak before 2010 and negative since.
+5e. Relative value on AUDNZD / EURGBP is NO-GO: no edge on the holdout.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

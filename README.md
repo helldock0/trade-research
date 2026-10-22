@@ -83,6 +83,9 @@ python scripts/run_variants.py --config strategy_dip_basket.yaml --stem dip_bask
 python scripts/run_tsmom_check.py
 python scripts/run_variants.py --config strategy_tsmom.yaml --stem tsmom_compare   # only if the check passes
 
+# 1j) Relative value on linked crosses (AUDNZD, EURGBP): FRED signal check
+python scripts/run_rv_check.py
+
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
 

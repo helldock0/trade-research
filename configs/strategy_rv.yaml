@@ -1,0 +1,63 @@
+strategy: rv
+
+# Relative value: band mean reversion on crosses of tightly linked economies.
+# AUD/NZD (Australia - New Zealand) and EUR/GBP (euro area - UK) tend to swing
+# back to their recent average. When the daily close is 2 standard deviations
+# from its 20-day mean, trade back toward it: long below, short above; exit at
+# the first close back across the mean or after 20 trading days.
+# EUR/CHF is left out: the 2011-2015 SNB floor and its removal are not a fair test.
+# Everything below was fixed on 2026-10-22 before any data was looked at.
+universe: [AUDNZD, EURGBP]
+conversion_pairs: [NZDUSD, GBPUSD]   # NZD / GBP P&L into USD; never traded
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  close_hour_utc: 21         # daily bars roll at 21:00 UTC
+
+signal:
+  band_period: 20            # mean and standard deviation of the last 20 daily closes
+  entry_z: 2.0               # enter when the close is this many standard deviations away
+  max_days: 20               # exit after this many trading days if the mean is not reached
+  atr_period: 20
+  stop_atr_mult: 3.0         # protective stop; sizes the trade (1R)
+  take_profit_r: 0
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 2      # one per pair
+  soft_daily_halt_pct: 2.0
+
+# Holding fee for multi-day FX positions (carry not modeled), this strategy only.
+costs_overrides:
+  financing_pct_per_year: {AUDNZD: 1.5, EURGBP: 1.5}
+
+# Signal check on FRED daily rates (scripts/run_rv_check.py), pre-registered.
+# Crosses come from the USD legs (AUDNZD = AUDUSD / NZDUSD, EURGBP = EURUSD / GBPUSD).
+# Net per trade = side x log(exit / entry) - round-trip cost - financing per calendar day.
+# Pass: the holdout trades of both pairs pooled have mean net > 0 with t >= 2.0,
+# and the dev trades pooled have mean net > 0.
+validation:
+  pairs:
+    AUDNZD: {holdout: ["1986-01-01", "2017-12-31"], round_trip_cost_bp: 3.0}
+    EURGBP: {holdout: ["1999-01-01", "2017-12-31"], round_trip_cost_bp: 2.0}
+  dev: ["2018-01-01", null]
+  min_t: 2.0
+  financing_pct_per_year: 1.5
+
+# Engine backtest (scripts/run_variants.py --config strategy_rv.yaml --stem rv_compare),
+# only if the signal check passes. `rv` is the decision row.
+variants:
+  rv: {}
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet
