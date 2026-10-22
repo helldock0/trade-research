@@ -541,9 +541,10 @@ def test_external_nowcast_attach_and_override(tmp_path):
     with pytest.raises(ValueError):
         load_external_nowcast(bad)
 
-    # Wired through prepare_events via nowcast.external_csv
+    # Wired through prepare_events via nowcast.external_csv: only the supplied
+    # release gets a nowcast, so it is the only row with a nowcast_gap signal
     cfg = _cfg(signal_mode="nowcast_gap", min_abs_z=0.0)
     cfg["nowcast"]["external_csv"] = str(p)
-    ev = prepare_events(cal, cfg)
+    ev = prepare_events(_synthetic_calendar(), cfg)
     assert len(ev) == 1 and ev.iloc[0]["nowcast"] == pytest.approx(0.45)
     assert ev.iloc[0]["signal_z"] > 0
