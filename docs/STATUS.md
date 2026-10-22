@@ -19,14 +19,13 @@ Detailed run artifacts stay in `reports/` (local only).
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
 | `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R. Trailing-stop / correlation-gated basket variants reach OOS ~+0.063R but fail expectancy and PF. On the 2012–2017 holdout the signal itself is negative (pooled 20d IC −0.098; carry −0.137). An expected-hikes input and a wider universe (NZD, CHF, crosses) both fail the pre-registered holdout rule. See "Macro swing" sections below. | NO-GO |
+| `event_drift` | Pricing-in before scheduled releases (23 G10 series), surprise-momentum or gasoline-nowcast signal. `pre` raw −0.006R (t −0.24, n=826), `post` −0.013R, `fade` −0.006R; every engine run negative. The pricing-in rule in the plan makes a flat `pre` a NO-GO. One weak lead (fading US CPI reactions, ~+0.07–0.13R, n 33–71) is parked; see "Event study on bars" below. | NO-GO |
 
 ## Active
 
-| Strategy | Hypothesis | Status |
-|----------|------------|--------|
-| `event_drift` | Market prices an expected surprise before scheduled releases. Pre-release signal = surprise momentum (consensus anchoring) or gasoline CPI nowcast gap. Variants: `pre` (exit before print), `post` (hold through), `fade` (against the reaction). | RESEARCH — harness + tests in place; needs local run on parquet bars |
+None. Both fundamentals lines are rejected (2026-10-22).
 
-Run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
+Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
 
 ### Calendar-only results (2018-01 → 2026-10, FXStreet, no price bars yet)
@@ -40,7 +39,44 @@ Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate,
 
 Data caveats found while building: FXStreet files member-state prints (DE, ES, ...) under currency EUR with the same name and lists flash/final under the same name, so series are keyed by (currency, country, event, preliminary); the config pins EMU flash HICP and US advance GDP. US CPI MoM consensus equals the print exactly in 80% of 2026 rows vs 17–50% in earlier years; verify consensus integrity before trusting 2026.
 
-Verdict so far: the pricing-in thesis is not dead but the easy signals are weak. The price-based part (`pre` drift, `post` surprise, `fade`) still needs the local M15 bars.
+Verdict at that stage: the pricing-in thesis was not dead, but the easy signals were weak. The price-based study below settles it.
+
+### Event study on bars (2026-10-22, cloud run, M15 BID bars 2018-01 → 2026-10)
+
+Bars come from the data branch (`scripts/bars_from_data_branch.py`), with the FXStreet calendar refreshed and FRED `GASREGW`. The config is unchanged.
+
+Reading rule, fixed before the run (plan Phase B and "Next" 2 below): judge `pre` / `post` / `fade` on raw t-stats, and treat a flat `pre` as NO-GO for these series. 3 variants × 2 signals = 6 tests, so a single |t| ≈ 2 is weak evidence.
+
+Raw returns (no stops, net of costs) and engine runs (stops, costs, one position):
+
+| Signal | Variant | n | Raw mean R | Hit | t | Engine trades | Engine exp R | PF |
+|---|---|---|---|---|---|---|---|---|
+| `surprise_momentum` | `pre` | 826 | −0.006 | 0.48 | −0.24 | 349 | −0.017 | 0.93 |
+| | `post` | 829 | −0.013 | 0.49 | −0.51 | 349 | −0.041 | 0.85 |
+| | `fade` | 408 | −0.006 | 0.47 | −0.39 | 330 | −0.022 | 0.82 |
+| `nowcast_gap` (US CPI) | `pre` | 71 | −0.079 | 0.35 | −1.26 | 66 | −0.123 | 0.54 |
+| | `post` | 71 | −0.132 | 0.35 | −1.75 | 66 | −0.191 | 0.48 |
+| | `fade` | 33 | +0.134 | 0.61 | 2.31 | 33 | +0.127 | 2.88 |
+
+- Momentum signals in the strong half (|z| ≥ 0.85) are no better than the weak half.
+- The print reaction goes against the momentum signal slightly more often than with it (hit 0.49, t −1.38).
+- By year, `pre` swings between −0.07R and +0.09R with no trend.
+
+**Verdict: NO-GO.** There is no pricing-in drift before these releases, holding through the print loses, and fading the reaction does nothing across the 23 series.
+
+Parked lead: fading US CPI reactions (enter 15 min after the print, exit after 4 h). This is a post-hoc look, not a pre-set test:
+
+| Signal | Fade when | n | Mean R | Hit | t |
+|---|---|---|---|---|---|
+| `nowcast_gap` | the reaction goes the signal's way (config) | 33 | +0.134 | 0.61 | 2.31 |
+| `nowcast_gap` | every CPI reaction | 71 | +0.075 | 0.54 | 1.66 |
+| `surprise_momentum` | the reaction goes the signal's way | 27 | +0.143 | 0.63 | 1.52 |
+| `surprise_momentum` | every CPI reaction | 47 | +0.065 | 0.55 | 1.07 |
+
+- The nowcast itself predicts the CPI surprise the wrong way (hit 0.43), so the edge, if any, is in the reaction, not the forecast.
+- Conditioning roughly halves n and doubles the mean, which noise also does.
+- At 4–8 trades a year it cannot carry a prop challenge alone.
+- To test it honestly it needs out-of-sample data (pre-2018 intraday bars, which the data branch does not have) or a forward test.
 
 ### Macro swing: live score table (2026-10-21, real data, all sources fetched)
 
@@ -177,8 +213,8 @@ Bar backtests, 2018+ only, for information. The holdout already rejects every si
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
 
-1. Run the event study locally on parquet bars; judge `pre` vs `post` vs `fade` on raw t-stats before any knob.
-2. Price drift can exist even with a weak surprise forecast (positioning, not forecasting). If `pre` is flat too, the pricing-in line is NO-GO for these series.
-3. Plug in a stronger forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied) and re-run `--calendar-only` before spending bars on it.
+1. Done (2026-10-22): event study on bars. `pre` is flat, so event_drift is NO-GO.
+2. The "price drift without a good forecast" idea is answered: `pre` is flat for these series.
+3. Optional: a stronger external forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied). Re-run `--calendar-only` first. Worth it only together with the parked CPI-fade lead, and that needs out-of-sample bars.
 4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
 5. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).
