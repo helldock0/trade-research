@@ -18,6 +18,8 @@ Do not use another data folder unless explicitly asked. Prefer existing files ov
 - Macro swing inputs: `data/macro/{group}_{CCY}.csv` and `data/macro/global_{key}.csv`, fetched by
   `python scripts/download_macro.py` from the sources named in `configs/strategy_macro_swing.yaml`
   (`src.data.macro` has one parser per source; `--show` prints the live score table).
+- FRED daily FX for the macro IC check: `data/macro/fx_{PAIR}.csv`, fetched and used by
+  `python scripts/run_macro_ic.py` (`src.research.macro_ic`). No price bars needed.
 - The same calendar CSV drives the news blackout (`src.features.news`) and the event study
   (`src.strategy.event_drift`, `src.research.event_study`).
 - Signals must stay point-in-time: anything used before a release comes from releases strictly before it.
