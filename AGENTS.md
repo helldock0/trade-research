@@ -10,6 +10,9 @@ All OHLC data lives in **`data/parquet`** (`D:\AI\trade\data\parquet`).
 
 Do not use another data folder unless explicitly asked. Prefer existing files over re-downloading.
 
+Cloud sessions (no `D:` drive): `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet`
+from the repo's `data` branch (Git LFS M5 BID bars from 2018; crosses built from their USD legs' M1 bars).
+
 ## Event / macro data
 
 - Economic calendar: `data/events_calendar.csv` (FXStreet, UTC release times, actual/forecast/previous).

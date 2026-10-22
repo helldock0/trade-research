@@ -18,7 +18,7 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
-| `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R, Monte Carlo success 0.18. Phase A IC was WEAK. Trailing-stop and correlation-gated basket variants (owner request) reach OOS ~+0.063R, PF 1.20; the basket passes Monte Carlo (0.93) and the FTMO path but not expectancy / PF. See "Macro swing" sections below. | NO-GO |
+| `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R. Trailing-stop / correlation-gated basket variants reach OOS ~+0.063R but fail expectancy and PF. On the 2012–2017 holdout the signal itself is negative (pooled 20d IC −0.098; carry −0.137). An expected-hikes input and a wider universe (NZD, CHF, crosses) both fail the pre-registered holdout rule. See "Macro swing" sections below. | NO-GO |
 
 ## Active
 
@@ -128,6 +128,51 @@ Caveats:
 
 Open question for the owner, not acted on: the expectancy gate is per trade. A basket can pass the prop-style checks (Monte Carlo, FTMO path) with a thin per-trade edge, so decide whether that gate is the right one for a basket before testing anything else here.
 
+### Macro swing: holdout check and three improvement ideas (2026-10-22, owner request)
+
+Three ideas, tested under a rule fixed in `configs/strategy_macro_swing.yaml` (`validation:`) before any run. A signal change is kept only if its pooled 20d IC beats the base config's on both the dev window (2018-01 → 2026-09) and the holdout (2012-01 → 2017-12), and is positive on the holdout. Bars start in 2018, so the holdout uses FRED daily FX only.
+
+The ideas:
+1. **Longer history for an honest holdout.** CFTC positioning now starts in July 2010. Old TFF files name the date column differently, and the NZD market was renamed in 2022.
+2. **Wider universe (`wide`).** Adds NZD and CHF:
+   - CHF: policy rate (BIS), 2y yield (SNB), positioning.
+   - NZD: policy rate and positioning; RBNZ blocks scripted downloads, so there is no 2y.
+   - Pairs: NZDUSD, USDCHF, EURJPY, GBPJPY, AUDJPY and EURGBP (11 pairs, 8 currencies).
+3. **Expected hikes (`hikes`).** A new input: 2y yield minus the policy rate, compared across currencies, at weight 1.0.
+
+`python scripts/run_macro_ic.py --validate` → `reports/macro_ic_validation.md`:
+
+| Variant | Pairs | Dev IC (t) | Holdout IC (t) | Dev IC, 5 base pairs | Holdout IC, 5 base pairs | Kept |
+|---|---|---|---|---|---|---|
+| base (`fixed_tp`) | 5 | 0.084 (1.44) | **−0.098 (−1.43)** | 0.084 | −0.098 | baseline |
+| `hikes` | 5 | 0.052 (0.89) | −0.081 (−1.18) | 0.052 | −0.081 | no |
+| `wide` | 11 | 0.038 (0.82) | −0.091 (−1.75) | 0.070 | −0.096 | no |
+| `wide_hikes` | 11 | −0.004 (−0.09) | −0.077 (−1.49) | 0.039 | −0.077 | no |
+
+The base signal is negative on the holdout, so its 2018+ edge does not carry over to the earlier regime.
+- Holdout per component (20d IC):
+  - carry −0.137 (t −2.11). On the dev window it was +0.118.
+  - rate momentum −0.038, risk −0.055, positioning −0.017.
+  - oil +0.114 (USDCAD only).
+- By year, 2012, 2013 and 2017 are strongly negative.
+- Coverage checked: AUD 2y starts mid-2013, and BIS has no Japan policy rate during QQE (2013–2016), so JPY carry is missing on 56% of holdout days. Otherwise every component is present. The risk component uses VIX only before 2016, because FRED SP500 has 10 years.
+
+Bar backtests, 2018+ only, for information. The holdout already rejects every signal change, so these cannot override it. The macro panel now has the longer CFTC history, which changes 2018–19 positioning: the `fixed_tp` full-sample numbers move from +0.040R / MC 0.18 to +0.063R / MC 0.36. OOS is unchanged, because the folds start mid-2019.
+
+| Variant | Trades | Exp R | Max DD | Return / yr | OOS exp R | OOS PF | Folds + | MC success | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `basket` (5 pairs) | 582 | 0.079 | 6.9% | 2.6% | 0.063 | 1.20 | 8/14 | 0.91 | NO-GO |
+| `hikes` | 550 | 0.122 | 6.1% | 3.8% | 0.097 | 1.31 | 9/14 | 0.96 | NO-GO |
+| `wide` (11 pairs) | 914 | 0.029 | 12.8% | 1.5% | 0.017 | 1.09 | 6/14 | 0.31 | NO-GO |
+| `wide_hikes` | 946 | 0.040 | 23.0% | 2.1% | 0.025 | 1.12 | 6/14 | 0.45 | NO-GO |
+
+- `wide` adds trades but each one is worse: the signal is weaker on the new pairs, as its lower dev IC already said.
+- `hikes` looks best in this 2018+ backtest but fails the holdout (IC −0.081) and has a lower dev IC than the base, so treat its backtest as in-sample luck.
+- The cross bars are built from the data branch's M1 legs (`scripts/bars_from_data_branch.py`). They sit within 0.03% of FRED's cross rates on a median day.
+- The engine now converts cross P&L through the USD major. Before, a full EURJPY stop booked about −0.6R.
+
+**Verdict: none of the three ideas is kept, and macro_swing stays NO-GO.** The composite's edge is regime-dependent: positive 2018–2026, negative 2012–2017. Reweighting would mean fitting one of the two regimes.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -135,5 +180,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 1. Run the event study locally on parquet bars; judge `pre` vs `post` vs `fade` on raw t-stats before any knob.
 2. Price drift can exist even with a weak surprise forecast (positioning, not forecasting). If `pre` is flat too, the pricing-in line is NO-GO for these series.
 3. Plug in a stronger forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied) and re-run `--calendar-only` before spending bars on it.
-4. Macro swing is NO-GO (Phase A WEAK, Phase B fails expectancy and Monte Carlo). Do not retune weights or triggers. A next macro hypothesis needs a different input (e.g. rate expectations from futures / OIS), not new weights.
-5. M5 / M1 BID bars for the majors are on the `data` branch via Git LFS (`git lfs pull --include=...`), so cloud sessions can backtest by resampling them to M15.
+4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
+5. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

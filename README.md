@@ -57,6 +57,10 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 
 # 1d) Macro IC check (FRED daily FX, no bars): does the macro_swing bias predict returns?
 python scripts/run_macro_ic.py
+python scripts/run_macro_ic.py --validate    # signal variants: dev 2018+ vs holdout 2012-2017
+
+# cloud sessions without data/parquet: M15 bars from the data branch (Git LFS)
+python scripts/bars_from_data_branch.py
 
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
