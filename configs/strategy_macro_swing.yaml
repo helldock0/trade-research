@@ -131,6 +131,23 @@ macro:
       window_days: 756
       sign: -1               # crowded positioning is a mild contrarian signal
 
+# Trade-management variants for scripts/run_macro_compare.py, deep-merged over
+# this file. Added after the trigger:none NO-GO (2026-10-22) at the owner's
+# request; the values were fixed before any run and are not tuned.
+#   take_profit_r: 0     -> no fixed target
+#   trailing_stop_r: R   -> after each bar the stop ratchets to R x initial risk
+#                           behind the best price since entry (1.0 = 2 ATR here)
+#   max_signed_corr      -> skip a new trade whose 60d daily-return correlation
+#                           with an open one, signed by both sides, exceeds this
+variants:
+  fixed_tp:                  # the Phase B baseline: 3R target, one position
+    signal: {trigger: none}
+  trail:                     # trailing stop instead of the fixed target
+    signal: {trigger: none, take_profit_r: 0, trailing_stop_r: 1.0, max_hold_days: 0}
+  basket:                    # trailing stop + up to 3 positions, correlation-gated
+    signal: {trigger: none, take_profit_r: 0, trailing_stop_r: 1.0, max_hold_days: 0}
+    risk: {max_open_positions: 3, max_signed_corr: 0.6, corr_window_days: 60}
+
 data:
   start: "2018-01-01"
   end: null

@@ -58,6 +58,9 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 # 1d) Macro IC check (FRED daily FX, no bars): does the macro_swing bias predict returns?
 python scripts/run_macro_ic.py
 
+# 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
+python scripts/run_macro_compare.py
+
 # 2b) Event study: pre / post / fade variants side by side
 python scripts/run_event_study.py
 python scripts/run_event_study.py --signal-mode nowcast_gap --tag cpi_nowcast
@@ -76,7 +79,7 @@ Outputs land under `reports/` (per-strategy JSON/CSV plus `batch_summary.json`).
 
 ```
 configs/          strategy + FTMO + cost YAMLs
-scripts/          download (bars, calendar, macro), backtest, prop sim, walk-forward, batch, event study, macro IC
+scripts/          download (bars, calendar, macro), backtest, prop sim, walk-forward, batch, event study, macro IC / compare
 src/              data, features, strategies, backtest, prop, research
 tests/
 mt5/              EA stubs only after promotion GO

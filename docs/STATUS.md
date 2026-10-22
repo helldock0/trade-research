@@ -18,7 +18,7 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
-| `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R, Monte Carlo success 0.18. Phase A IC was WEAK. See "Macro swing" sections below. | NO-GO |
+| `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R, Monte Carlo success 0.18. Phase A IC was WEAK. Trailing-stop and correlation-gated basket variants (owner request) reach OOS ~+0.063R, PF 1.20; the basket passes Monte Carlo (0.93) and the FTMO path but not expectancy / PF. See "Macro swing" sections below. | NO-GO |
 
 ## Active
 
@@ -102,6 +102,31 @@ Promotion gates:
 - Per the plan, `pullback` / `breakout` are compared only if `none` clears the gates. It does not, so they were not run.
 - Weights were not retuned.
 - Caveat: these M15 bars were built from M5, not the owner's native M15 files, so a local run can differ slightly.
+
+### Macro swing: trailing stop and correlation-gated basket (2026-10-22, owner request after the NO-GO)
+
+`python scripts/run_macro_compare.py` → `reports/macro_compare.md`. Same bars, panel and calendar as Phase B; variants are in `variants:` of `configs/strategy_macro_swing.yaml`. The values were fixed before the first run and not tuned:
+- `trail`: no fixed target, and no 20-day max hold. After each bar, the stop ratchets to 1R (= the initial 2 ATR stop distance) behind the best price since entry. The bias-flip exit stays.
+- `basket`: `trail`, plus up to 3 positions at once (one per pair). A new trade is skipped when its 60-day daily-return correlation with an open one, signed by both sides, is above 0.6. The correlation is point-in-time and ends the day before. Example: long EURUSD + long GBPUSD is the same short-USD bet and gets skipped.
+
+| Variant | Trades | Exp R | PF | Win | Max DD | Return / yr | OOS exp R | OOS PF | Folds + | MC success | FTMO path | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `fixed_tp` (Phase B) | 280 | 0.040 | 1.08 | 0.29 | 11.4% | 0.6% | 0.054 | 1.30 | 7/14 | 0.18 | fail | NO-GO |
+| `trail` | 380 | 0.055 | 1.14 | 0.40 | 7.5% | 1.2% | 0.062 | 1.20 | 8/14 | 0.27 | fail | NO-GO |
+| `basket` | 583 | 0.089 | 1.22 | 0.42 | 7.8% | 2.9% | 0.063 | 1.20 | 8/14 | 0.93 | pass | NO-GO |
+
+What changed and what didn't:
+- The trailing stop raises the win rate and cuts the drawdown.
+- The basket roughly doubles the trades, so Monte Carlo (which runs through the whole trade list) and the FTMO path replay now pass.
+- Neither moves the per-trade OOS edge much (0.054 → 0.063R vs the 0.15R gate), and OOS PF slips to 1.20 (gate 1.25).
+- Still NO-GO.
+
+Caveats:
+- Three variants were tried after a NO-GO, so the best row is optimistic.
+- The Monte Carlo shuffles trades as independent draws and the engine's drawdown is on closed trades, so with up to 3 positions open the real risk is higher than these numbers suggest.
+- Stops that the next bar gapped through (fill at the stop, not the open) cost under 0.1R in total, so gaps do not change the picture.
+
+Open question for the owner, not acted on: the expectancy gate is per trade. A basket can pass the prop-style checks (Monte Carlo, FTMO path) with a thin per-trade edge, so decide whether that gate is the right one for a basket before testing anything else here.
 
 ## Next
 

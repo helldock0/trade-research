@@ -4,8 +4,11 @@ Daily decision at `sessions.signal_time` (UTC). Pair bias comes from
 `src.features.macro_score` (rates repricing, carry, risk, commodities,
 positioning). A pair is tradable only when |bias| >= min_abs_bias, in the bias
 direction. The D1 trigger (`none` | `pullback` | `breakout`) decides the day.
-Stops are ATR-based; the position is closed when the bias flips (scheduled
-exit), at take-profit, or at max_hold_days.
+Stops are ATR-based (optionally trailing, see `signal.trailing_stop_r`); the
+position is closed when the bias flips (scheduled exit), at take-profit when
+one is set, or at max_hold_days. With risk.max_open_positions > 1 the top
+candidates of each day are offered and the engine's correlation gate decides
+which of them may join the open positions (a basket).
 """
 
 from __future__ import annotations
@@ -103,8 +106,10 @@ def generate_signals(
     if mode not in TRIGGERS:
         raise ValueError(f"signal.trigger must be one of {TRIGGERS}")
     stop_mult = float(sig.get("stop_atr_mult", 2.0))
-    tp_r = float(sig.get("take_profit_r", 3.0))
+    tp_r = float(sig.get("take_profit_r") or 0.0)
     cooldown = int(sig.get("reentry_cooldown_days", 0) or 0)
+    # one candidate per day for a single slot; up to max_open_positions for a basket
+    per_day = max(1, int((strategy_cfg.get("risk") or {}).get("max_open_positions", 1) or 1))
 
     m15 = {s.upper(): ensure_utc_index(df) for s, df in bars_by_symbol.items()}
     eod = {s: prepare_eod(df, signal_hhmm, sig) for s, df in m15.items()}
@@ -134,46 +139,47 @@ def generate_signals(
             cands.append((abs(float(b)), sym, want, row))
         if not cands:
             continue
-        _, sym, side, row = max(cands, key=lambda c: c[0])
-        entry_ts = pd.Timestamp(
-            year=day.year, month=day.month, day=day.day, hour=signal_t.hour, minute=signal_t.minute, tz="UTC"
-        )
-        bars = m15[sym]
-        if entry_ts not in bars.index:
-            continue
-        if news_cfg.get("enabled", True) and is_news_blackout(
-            entry_ts, sym, news_df, int(news_cfg.get("blackout_minutes", 60))
-        ):
-            continue
-        entry = float(bars.loc[entry_ts]["close"])
-        risk = stop_mult * float(row["atr"])
-        stop = entry - side * risk
-        tp = entry + side * tp_r * risk
-        exit_time = None
-        if exit_on_flip:
-            d_exit = first_bias_exit(bias_daily[sym], day, side, exit_abs)
-            if d_exit is not None:
-                exit_time = pd.Timestamp(
-                    year=d_exit.year, month=d_exit.month, day=d_exit.day,
-                    hour=signal_t.hour, minute=signal_t.minute, tz="UTC",
-                )
-        b = float(bias_daily.at[day, sym])
-        last_signal_day[sym] = day
-        signals.append(
-            Signal(
-                timestamp=entry_ts,
-                symbol=sym,
-                side=side,
-                entry=entry,
-                stop=stop,
-                take_profit=tp,
-                risk_price=risk,
-                session="macro",
-                range_high=entry + risk,
-                range_low=entry - risk,
-                reason=f"macro_swing|{mode}|bias={b:+.2f}",
-                exit_time=exit_time,
+        # strongest bias first; the engine fills them in order while slots and the correlation gate allow
+        for _, sym, side, row in sorted(cands, key=lambda c: -c[0])[:per_day]:
+            entry_ts = pd.Timestamp(
+                year=day.year, month=day.month, day=day.day, hour=signal_t.hour, minute=signal_t.minute, tz="UTC"
             )
-        )
+            bars = m15[sym]
+            if entry_ts not in bars.index:
+                continue
+            if news_cfg.get("enabled", True) and is_news_blackout(
+                entry_ts, sym, news_df, int(news_cfg.get("blackout_minutes", 60))
+            ):
+                continue
+            entry = float(bars.loc[entry_ts]["close"])
+            risk = stop_mult * float(row["atr"])
+            stop = entry - side * risk
+            tp = entry + side * tp_r * risk if tp_r > 0 else float("nan")
+            exit_time = None
+            if exit_on_flip:
+                d_exit = first_bias_exit(bias_daily[sym], day, side, exit_abs)
+                if d_exit is not None:
+                    exit_time = pd.Timestamp(
+                        year=d_exit.year, month=d_exit.month, day=d_exit.day,
+                        hour=signal_t.hour, minute=signal_t.minute, tz="UTC",
+                    )
+            b = float(bias_daily.at[day, sym])
+            last_signal_day[sym] = day
+            signals.append(
+                Signal(
+                    timestamp=entry_ts,
+                    symbol=sym,
+                    side=side,
+                    entry=entry,
+                    stop=stop,
+                    take_profit=tp,
+                    risk_price=risk,
+                    session="macro",
+                    range_high=entry + risk,
+                    range_low=entry - risk,
+                    reason=f"macro_swing|{mode}|bias={b:+.2f}",
+                    exit_time=exit_time,
+                )
+            )
     signals.sort(key=lambda s: s.timestamp)
     return signals
