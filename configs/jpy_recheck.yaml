@@ -1,0 +1,58 @@
+# Independent re-check of two USDJPY edges claimed in techlvling/gj-strat
+# (results/alpha_hunt/REPORT.md, results/basket_last3y/REPORT.md, results/costs_gotobi/REPORT.md).
+# The rules below are re-implemented from their written description in this repo's own
+# code (src/research/jpy_recheck.py); none of gj-strat's code is imported or run.
+# Fixed on 2026-10-22 before any re-check run.
+
+# Raw data: Dukascopy 1-minute BID and ASK candle files (*.bi5) from gj-strat's datastore,
+# decoded with this repo's own decoder; cross-checked against data/parquet/USDJPY M1 (2018+).
+datastore: /home/user/techlvling/gj-strat/datastore
+symbol: USDJPY
+pip: 0.01
+start: "2010-01-01"
+end: "2026-10-07"            # gj-strat's data end
+
+costs:
+  commission_usd_per_lot: 7.0   # round turn
+  slippage_pips: 0.2            # per stop fill (entry stop, SL, BE); market entries count as one fill
+  swap_markup_pct: 1.0          # per year on notional, against the trader; carry from BIS policy rates (data/macro)
+
+periods:                        # gj-strat's own split
+  design: ["2010-01-01", "2017-12-31"]
+  check: ["2018-01-01", "2023-12-31"]
+  holdout: ["2024-01-01", "2026-10-07"]
+
+gotobi:                         # SELL at the 09:55 JST fix (00:55 UTC bar open, bid), time exit 06:00 UTC (ask open)
+  entry_utc: "00:55"
+  exit_utc: "06:00"
+  sl_atr: 0.25                  # x ATR20 of New York-close (17:00) daily bid bars, through the prior day
+  # gotobi days: 5/10/15/20/25/month-end, moved to the previous weekday on weekends (JP holidays ignored)
+
+box:                            # gj-strat "vol-box": Version B box breakout
+  box_start_utc: "23:30"        # 05:00-06:00 IST box = 23:30-00:29 UTC (previous UTC date), BID high / low
+  box_minutes: 60               # every box minute must have ticks, else the day is skipped
+  orders_until_utc: "05:30"     # OCO stops live 00:30-05:30 UTC (06:00-11:00 IST); buys trigger on ask
+  sl_box_mult: 1.0              # SL = box size + entry spread (this is 1R)
+  rr: 9.0
+  be_trigger_r: 3.0             # at 3R the stop moves to entry + box x 5/30
+  be_offset_box: 0.1666667
+  reentry_wait_minutes: 6       # after an SL/BE exit before 05:30 UTC: one re-entry stop at the range level
+
+vol_filter:                     # "vol-" = trade only when ATR20 >= its 250-day rolling median (both known before the day)
+  median_days: 250
+
+# Pre-registered verdicts:
+# * matches (gotobi): >= 95% of gj-strat's logged trades (results/patterns_usdjpy/
+#   trades_P1_fix-short_to_0600UTC_gotobi.csv, unfiltered) found on the same day with |dR| < 0.05.
+# * matches (vol-box): Oct 2023 - Oct 2026 avg R within 0.05 of gj-strat's 0.24 (359 trades) and
+#   trade count within 5%.
+# * confirmed edge (each strategy, vol-filtered): avg net R > 0 in check AND in holdout, and t >= 2.0
+#   over 2018-2026 combined.
+
+# Robustness, added after the verdicts above were in (2026-10-22) and fixed before this part ran.
+# Descriptive only; it does not change the verdicts above.
+robustness:
+  slippage_pips: [0.5, 1.0]      # per stop fill, instead of 0.2
+  placebo: non-gotobi weekdays   # the same 00:55 -> 06:00 short on every other weekday
+  by_year: ["2018-01-01", "2026-10-07"]
+  unseen_markets: [AUDJPY, CADJPY, CHFJPY, NZDJPY]   # same frozen rules, gross R (no costs), own ATR / median

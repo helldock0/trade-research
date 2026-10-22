@@ -35,7 +35,9 @@ Detailed run artifacts stay in `reports/` (local only).
 
 ## Active
 
-None. The fundamentals lines, turn of the month, intraday momentum, buy-the-dip (single index and basket), trend following and relative value are all rejected (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
+None of this repo's own lines: the fundamentals lines, turn of the month, intraday momentum, buy-the-dip (single index and basket), trend following and relative value are all rejected (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
+
+Candidate from the gj-strat re-check: the USDJPY gotobi short (vol-filtered), which held up in every check. The vol-box reproduced, but it is fragile. See "gj-strat USDJPY edges" below.
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -411,6 +413,52 @@ Hypothesis: crosses of tightly linked economies swing back to their recent avera
 
 **Verdict: NO-GO.** Per the plan, no bar run. The strategy (`src/strategy/rv.py`, tested) is ready for a future pre-registered test.
 
+### gj-strat USDJPY edges, independent re-check (2026-10-22, owner request)
+
+The question: are the two USDJPY edges claimed in techlvling/gj-strat real? I re-checked them with this repo's own code and didn't import or run any of gj-strat's code. The two edges:
+- **gotobi**: on gotobi days (the 5th, 10th, 15th, 20th and 25th, plus month-end, moved to the previous weekday when they fall on a weekend), sell at the 09:55 JST Tokyo fix (00:55 UTC) and exit at 06:00 UTC. The stop is 0.25 × ATR20.
+- **box**: a 23:30–00:29 UTC range, then an OCO stop at either edge until 05:30 UTC. The stop is the box size plus the spread (1R) and the target is 9R. At 3R the stop moves to entry + 1/6 of the box. One re-entry is allowed.
+- **vol- prefix**: trade only when ATR20 is at or above its 250-day median. Both values are known before the day.
+
+How it was run:
+- Rules, costs and verdict thresholds were fixed in `configs/jpy_recheck.yaml` before the run.
+- Data: gj-strat's raw Dukascopy 1-minute BID/ASK files, 2010-01 → 2026-10, decoded by `src/research/jpy_recheck.py`. Over 2018+ the decoded bid bars match `data/parquet/USDJPY_M15` exactly: 218,627 common bars, median difference 0.0 pip.
+- Costs: $7 a lot, 0.2 pip per stop fill, and swap from the BIS policy-rate spread minus 1% a year.
+- Command: `python -I scripts/run_jpy_recheck.py` → `reports/jpy_recheck.md`.
+
+| Pre-registered check | Result |
+|---|---|
+| gotobi reproduces gj-strat's trade log (≥ 95% same day, abs dR < 0.05) | **yes**: 1,187 of 1,192 trades (99.6%), median abs dR 0.001 |
+| vol-box reproduces Oct 2023 – Oct 2026 (359 trades, +0.24R) | **yes**: 359 trades, +0.245R |
+| vol-gotobi edge (check > 0, holdout > 0, t ≥ 2 over 2018+) | **yes** |
+| vol-box edge (same rule) | **yes** |
+
+| Line (net R a trade) | Design 2010–17 | Check 2018–23 | Holdout 2024–26 | 2018+ trades | 2018+ avg R (t) |
+|---|---|---|---|---|---|
+| gotobi | +0.149 (3.27) | +0.114 (2.23) | +0.110 (1.49) | 631 | +0.113 (2.68) |
+| vol-gotobi | +0.178 (1.98) | +0.170 (2.08) | +0.217 (1.96) | 283 | +0.185 (2.79) |
+| box | +0.063 (1.03) | +0.162 (2.09) | +0.134 (1.24) | 2,323 | +0.153 (2.43) |
+| vol-box | +0.160 (1.58) | +0.239 (2.07) | +0.219 (1.34) | 1,079 | +0.233 (2.46) |
+
+Robustness checks: descriptive only. They were added to the config after the verdicts and fixed before they ran.
+
+| Check | vol-gotobi | vol-box |
+|---|---|---|
+| 2018+ at 0.5 pip slippage per stop fill | +0.171 (t 2.58) | +0.202 (t 2.13) |
+| 2018+ at 1.0 pip slippage per stop fill | +0.148 (t 2.22) | +0.150 (t 1.59) |
+| Years positive, 2018–2026 | 7 of 9 (2018 and 2026 lose) | 8 of 9 (2019 loses) |
+| Placebo: same short on non-gotobi weekdays, 2018+ | gotobi +0.113 vs placebo −0.056 (t −2.50) | — |
+| Same rules on unseen AUD/CAD/CHF/NZD-JPY, gross 2018+ | all positive; CHFJPY strongest (+0.197, t 3.31) | AUDJPY +0.138, CADJPY +0.041, CHFJPY −0.114, NZDJPY −0.114 |
+
+- **gotobi** is the strongest result in this repo so far. It is positive in all three periods and survives 5× the slippage. It is specific to gotobi days, since the same trade on other days loses. Before costs it is positive on all 4 unseen JPY pairs, but clearly so only on CHFJPY. It is also a documented flow: Japanese importers buy USD at the 09:55 fix on settlement days. It is small, about +0.15–0.19R a trade, and comes with about 30 vol-filtered trades a year.
+- **vol-box** passes the bar, but it is weaker:
+  - Its settings were picked on USDJPY's full 2010–2026 history. gj-strat's own `jpy_edges_oos` report marks USDJPY "not clean", so the check and holdout periods are not truly unseen.
+  - It falls below t 2 at 1 pip slippage.
+  - It does not carry over: 2 of 4 unseen JPY pairs lose even before costs.
+  - It rests on rare 9R winners: 24% win rate, and the holdout t is only 1.34.
+
+**Verdict: gotobi CONFIRMED (candidate); vol-box REPRODUCED but FRAGILE.** Neither has been run through this repo's engine, walk-forward or Monte Carlo gates yet.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -424,4 +472,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 5c. Buy the dip is NO-GO by the gates but has a real, thin edge. More indices were tried: only US ones pass, so the basket is about one bet. The remaining lever is risk sizing, which is the owner's call.
 5d. Trend following across FX / gold / indices is NO-GO: weak before 2010 and negative since.
 5e. Relative value on AUDNZD / EURGBP is NO-GO: no edge on the holdout.
+5f. gj-strat's USDJPY gotobi short is confirmed by an independent re-check, and vol-box is reproduced but fragile. Next step if wanted: run vol-gotobi through this repo's engine, walk-forward and Monte Carlo gates (M1 bars needed for the 00:55 entry), then a demo forward test. Don't retune its settings.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).

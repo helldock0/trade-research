@@ -86,6 +86,9 @@ python scripts/run_variants.py --config strategy_tsmom.yaml --stem tsmom_compare
 # 1j) Relative value on linked crosses (AUDNZD, EURGBP): FRED signal check
 python scripts/run_rv_check.py
 
+# 1k) Independent re-check of gj-strat's USDJPY gotobi / vol-box edges on its raw minute files
+python -I scripts/run_jpy_recheck.py --datastore ../techlvling/gj-strat/datastore
+
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
 
