@@ -15,6 +15,9 @@ Do not use another data folder unless explicitly asked. Prefer existing files ov
 - Economic calendar: `data/events_calendar.csv` (FXStreet, UTC release times, actual/forecast/previous).
   Refresh with `python scripts/download_calendar.py` (merges into the cache).
 - FRED series cache: `data/macro/{SERIES}.csv` (e.g. `GASREGW` for the CPI nowcast).
+- Macro swing inputs: `data/macro/{group}_{CCY}.csv` and `data/macro/global_{key}.csv`, fetched by
+  `python scripts/download_macro.py` from the sources named in `configs/strategy_macro_swing.yaml`
+  (`src.data.macro` has one parser per source; `--show` prints the live score table).
 - The same calendar CSV drives the news blackout (`src.features.news`) and the event study
   (`src.strategy.event_drift`, `src.research.event_study`).
 - Signals must stay point-in-time: anything used before a release comes from releases strictly before it.

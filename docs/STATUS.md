@@ -23,6 +23,7 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | Strategy | Hypothesis | Status |
 |----------|------------|--------|
+| `macro_swing` | Fundamentals pick pair + direction, technicals time it. Per-currency score = weighted mean of standardized components: 2y-yield repricing (60d), policy-rate carry, risk-off beta (VIX + equities), oil for CAD, copper for AUD, contrarian CFTC positioning. Pair bias = base − quote; trade only when |bias| ≥ threshold; D1 pullback / breakout / none trigger; ATR stop; exit on bias flip. | RESEARCH — loaders + scoring + tests in place; needs local run on parquet bars |
 | `event_drift` | Market prices an expected surprise before scheduled releases. Pre-release signal = surprise momentum (consensus anchoring) or gasoline CPI nowcast gap. Variants: `pre` (exit before print), `post` (hold through), `fade` (against the reaction). | RESEARCH — harness + tests in place; needs local run on parquet bars |
 
 Run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
@@ -41,9 +42,22 @@ Data caveats found while building: FXStreet files member-state prints (DE, ES, .
 
 Verdict so far: the pricing-in thesis is not dead but the easy signals are weak. The price-based part (`pre` drift, `post` surprise, `fade`) still needs the local M15 bars.
 
+### Macro swing: live score table (2026-10-21, real data, all sources fetched)
+
+| CCY | rate mom | carry | risk | positioning | score |
+|---|---|---|---|---|---|
+| USD | 1.89 | 0.74 | -0.10 | 1.19 | 1.12 |
+| AUD | -0.10 | 1.37 | 0.19 | -0.89 | 0.09 |
+| GBP | 0.60 | 0.63 | 0.06 | -1.59 | 0.06 |
+| CAD | -0.53 | -0.69 | 0.13 | 0.57 | -0.13 |
+| EUR | -0.74 | -0.47 | -0.00 | -0.92 | -0.58 |
+| JPY | -1.11 | -1.57 | -0.19 | -0.72 | -0.94 |
+
+Pair bias: USDJPY +2.06, USDCAD +1.25, AUDUSD -1.03, GBPUSD -1.06, EURUSD -1.70 (CAD also carries oil +0.28). Caveats: the GBP rate input is the BoE 5y par yield (no free daily 2y); the BoE endpoint throttles bursts, so the fetcher retries with long waits; IMF copper is monthly with a ~3-month lag, so the AUD metals component is usually stale and dropped by the 45-day forward-fill limit.
+
 ## Next
 
 1. Run the event study locally on parquet bars; judge `pre` vs `post` vs `fade` on raw t-stats before any knob.
 2. Price drift can exist even with a weak surprise forecast (positioning, not forecasting). If `pre` is flat too, the pricing-in line is NO-GO for these series.
 3. Plug in a stronger forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied) and re-run `--calendar-only` before spending bars on it.
-4. Macro-swing line (rates / risk / positioning score + D1 trigger) is the next hypothesis after this one.
+4. Macro swing: `python scripts/download_macro.py` then `python scripts/run_backtest.py --strategy macro_swing` and `run_walkforward.py`. Compare `trigger: none` (always in the strongest pair) vs `pullback` vs `breakout` before any weight tuning; component weights are priors, not fitted.

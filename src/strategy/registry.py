@@ -17,6 +17,7 @@ KNOWN_STRATEGIES: tuple[str, ...] = (
     "xau_htf_pullback",
     "htf_adx_pullback",
     "event_drift",
+    "macro_swing",
 )
 
 
@@ -75,6 +76,10 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
         from src.strategy.event_drift import generate_signals
 
         return generate_signals
+    if sid in ("macro_swing", "macro"):
+        from src.strategy.macro_swing import generate_signals
+
+        return generate_signals
     from src.strategy.cssm import generate_signals
 
     return generate_signals
@@ -104,4 +109,6 @@ def default_config_name(strategy: str | None = None) -> str:
         return "strategy_htf_adx_pullback.yaml"
     if s in ("event_drift", "event"):
         return "strategy_event_drift.yaml"
+    if s in ("macro_swing", "macro"):
+        return "strategy_macro_swing.yaml"
     return "strategy_cssm.yaml"

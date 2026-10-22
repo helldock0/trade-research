@@ -20,6 +20,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
 | `event_drift` | Pre-release drift / surprise / fade on macro releases | RESEARCH |
+| `macro_swing` | Macro currency scores (rates, carry, risk, commodities, positioning) + D1 trigger | RESEARCH |
 
 ## Setup
 
@@ -46,6 +47,9 @@ python scripts/download_data.py
 # 1b) Economic calendar (FXStreet) + FRED gasoline -> data/events_calendar.csv, data/macro/
 python scripts/download_calendar.py --gasoline
 
+# 1c) Macro series (FRED, ECB, BoC, RBA, MOF, BoE, BIS, CFTC) -> data/macro/
+python scripts/download_macro.py --show
+
 # 2) Single strategy
 python scripts/run_backtest.py --strategy htf_adx_pullback
 python scripts/run_prop_sim.py --strategy htf_adx_pullback
@@ -69,7 +73,7 @@ Outputs land under `reports/` (per-strategy JSON/CSV plus `batch_summary.json`).
 
 ```
 configs/          strategy + FTMO + cost YAMLs
-scripts/          download (bars, calendar), backtest, prop sim, walk-forward, batch, event study
+scripts/          download (bars, calendar, macro), backtest, prop sim, walk-forward, batch, event study
 src/              data, features, strategies, backtest, prop, research
 tests/
 mt5/              EA stubs only after promotion GO
