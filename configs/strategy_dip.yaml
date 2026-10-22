@@ -1,0 +1,77 @@
+strategy: dip
+
+# Buy the dip in an uptrend (Connors-style short-term mean reversion): when an
+# index above its 200-day average has a sharp short-term drop (RSI(2) < 10),
+# buy at the cash close; exit at the first close above the 5-day average or
+# after 10 trading days. Long only, one position per index.
+# Everything below was fixed on 2026-10-22 before any data was looked at.
+universe:
+  - NAS100                   # traded; matches the NASDAQ-100 history of the signal check
+
+timeframe: M15
+
+sessions:
+  timezone: UTC
+  london_end: "11:00"        # unused in swing mode; the engine expects the keys
+  ny_end: "16:00"
+  exchange_tz: America/New_York
+  cash_close: "16:00"
+
+signal:
+  trend_sma: 200             # only buy when the close is above this average
+  rsi_period: 2
+  rsi_entry: 10              # buy when RSI(2) closes below this
+  exit_sma: 5                # sell at the first close above this average
+  max_days: 10               # or after this many trading days
+  calendar_series: NASDAQ100 # US trading days (FRED dates)
+  atr_period: 20
+  stop_atr_mult: 2.5         # protective stop under the entry; sizes the trade (1R)
+  take_profit_r: 0
+  breakeven_at_r: 0.0
+  exit_mode: swing
+  allow_weekend_hold: true
+  max_hold_days: 0
+
+risk:
+  risk_per_trade_pct: 0.5
+  max_open_positions: 1
+  soft_daily_halt_pct: 2.0
+
+# Signal check on FRED daily closes (scripts/run_dip_check.py), pre-registered.
+# Trade return = log(exit close / entry close) minus financing (6% a year per
+# calendar day held) and the round-trip spread from configs/costs.yaml.
+# Excess = trade return minus the mean daily return on all uptrend days (close >
+# 200-day average) of the same window times the trading days held: what simply
+# holding the index in an uptrend would have earned.
+# Pass: mean excess > 0 with t >= 2.0 on the primary series over the holdout,
+# and mean excess > 0 on the dev window for every series.
+# The holdout starts in 2000: index closes before then carry positive daily
+# autocorrelation from stale prices (Lo & MacKinlay 1988), which biases any dip
+# test; earlier years are reported as context, not judged.
+validation:
+  series: [NASDAQ100, NASDAQCOM]   # primary first
+  holdout: ["2000-01-01", "2017-12-31"]
+  dev: ["2018-01-01", null]
+  context: [null, "1999-12-31"]
+  min_t: 2.0
+  financing_pct_per_year: 6.0
+  # Changed after the first run (2026-10-22): that run charged costs.yaml's 3
+  # NAS100 points per round trip at every historical index level (0.3% of price
+  # in 2002, 3% in the 1970s) and gave holdout t 1.74. Spreads scale with price,
+  # so the cost is now a fixed 2 bp round trip (the measured NAS100 spread near
+  # the close is ~0.5 bp). Both runs are recorded in docs/STATUS.md.
+  round_trip_cost_bp: 2.0
+
+# Engine backtest (scripts/run_variants.py --config strategy_dip.yaml --stem dip_compare),
+# only if the signal check passes. `dip` is the decision row.
+variants:
+  dip: {}
+  dip_us500:
+    universe: [US500]
+  dip_us30:
+    universe: [US30]
+
+data:
+  start: "2018-01-01"
+  end: null
+  cache_dir: data/parquet

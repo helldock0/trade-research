@@ -74,6 +74,12 @@ def contract_size(symbol: str, costs_cfg: dict[str, Any]) -> float | None:
     return float(v) if v is not None else None
 
 
+def financing_pct(symbol: str, costs_cfg: dict[str, Any]) -> float | None:
+    """Yearly overnight financing (% of notional) for instruments under `financing_pct_per_year:` in costs.yaml."""
+    v = (costs_cfg.get("financing_pct_per_year") or {}).get(symbol.upper())
+    return float(v) if v is not None else None
+
+
 def position_size_lots(
     equity: float,
     risk_pct: float,

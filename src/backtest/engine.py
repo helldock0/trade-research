@@ -11,6 +11,7 @@ from src.backtest.costs import (
     commission_usd,
     contract_size,
     entry_fill_price,
+    financing_pct,
     exit_fill_price,
     is_cross,
     position_size_lots,
@@ -89,6 +90,16 @@ def usd_per_unit(ccy: str, ts: pd.Timestamp, closes: dict[str, pd.Series]) -> fl
             if v > 0:
                 return 1.0 / v if inverse else v
     raise ValueError(f"no {ccy}USD or USD{ccy} bars to convert {ccy} P&L to USD")
+
+
+def financing_usd(position: dict[str, Any], exit_ts: pd.Timestamp, costs_cfg: dict[str, Any]) -> float:
+    """Overnight financing over the calendar time held, for instruments that configure it (index CFDs)."""
+    rate = financing_pct(position["symbol"], costs_cfg)
+    if not rate:
+        return 0.0
+    days = (pd.Timestamp(exit_ts) - pd.Timestamp(position["entry_time"])) / pd.Timedelta(days=1)
+    notional = position["entry_price"] * position["lots"] * (contract_size(position["symbol"], costs_cfg) or 100000.0) * position.get("usd_per_quote", 1.0)
+    return notional * rate / 100.0 * max(days, 0.0) / 365.0
 
 
 def stop_exit_reason(side: int, stop: float, entry: float, be_armed: bool, trailed: bool = False) -> str:
@@ -269,7 +280,7 @@ def run_backtest(
             lots = position["lots"]
             pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, ts), contract_size(sym, costs_cfg))
             comm = commission_usd(lots, sym, costs_cfg)
-            pnl -= comm
+            pnl -= comm + financing_usd(position, ts, costs_cfg)
             r_mult = pnl / (initial_balance * risk_pct / 100.0)
 
             trades.append(
@@ -346,6 +357,7 @@ def run_backtest(
                     "be_armed": False,
                     "trailed": False,
                     "best": fill,
+                    "usd_per_quote": quote_usd(sig.symbol, ts) or 1.0,
                     "exit_time": getattr(sig, "exit_time", None),
                 }
             )
@@ -360,7 +372,7 @@ def run_backtest(
         side = position["side"]
         pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, last_ts), contract_size(sym, costs_cfg))
         comm = commission_usd(lots, sym, costs_cfg)
-        pnl -= comm
+        pnl -= comm + financing_usd(position, last_ts, costs_cfg)
         trades.append(
             Trade(
                 symbol=sym,

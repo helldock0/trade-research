@@ -90,3 +90,10 @@ contracts:
   NAS100: 1.0
   US500: 1.0
   US30: 1.0
+
+# Overnight financing on multi-day holds, % of notional a year over calendar time
+# (added 2026-10-22 for the dip test; turn-of-the-month runs before it had none)
+financing_pct_per_year:
+  NAS100: 6.0
+  US500: 6.0
+  US30: 6.0

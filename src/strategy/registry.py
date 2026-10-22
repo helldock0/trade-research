@@ -20,6 +20,7 @@ KNOWN_STRATEGIES: tuple[str, ...] = (
     "macro_swing",
     "tom",
     "imom",
+    "dip",
 )
 
 
@@ -78,6 +79,10 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
         from src.strategy.event_drift import generate_signals
 
         return generate_signals
+    if sid in ("dip", "buy_the_dip"):
+        from src.strategy.dip import generate_signals
+
+        return generate_signals
     if sid in ("imom", "intraday_momentum"):
         from src.strategy.imom import generate_signals
 
@@ -125,4 +130,6 @@ def default_config_name(strategy: str | None = None) -> str:
         return "strategy_tom.yaml"
     if s in ("imom", "intraday_momentum"):
         return "strategy_imom.yaml"
+    if s in ("dip", "buy_the_dip"):
+        return "strategy_dip.yaml"
     return "strategy_cssm.yaml"

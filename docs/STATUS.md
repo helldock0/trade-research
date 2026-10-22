@@ -25,9 +25,11 @@ Detailed run artifacts stay in `reports/` (local only).
 
 | `imom` | Market intraday momentum on US index CFDs: at 15:30 New York trade the sign of the day's return so far, exit at the 16:00 close (one trade a day). Net of measured-spread costs: −1.3 bp/trade on 2018–2021 and −2.2 bp (t −2.9) on 2022+. Gross momentum was +1.8 bp before 2022 and is gone since. Engine: −0.044R over 2,162 trades. See "Intraday momentum" below. | NO-GO |
 
+| `dip` | Buy the dip in an uptrend on US index CFDs (RSI(2) < 10 above the 200-day average; out above the 5-day average or after 10 days). The signal check passes on 2000–2017 (+0.45% per trade over holding, t 2.29) but only after a cost-scaling fix (t 1.74 before). On 2018+ bars: 67 trades, win 0.73, PF 2.21, max DD 1.1%, but OOS +0.098R and about 8 trades a year, so Monte Carlo 0.00. See "Buy the dip" below. | NO-GO (gates); real but thin edge |
+
 ## Active
 
-None. The fundamentals lines, turn of the month and intraday momentum are all rejected (2026-10-22).
+None. The fundamentals lines, turn of the month, intraday momentum and buy-the-dip are all rejected by the gates (2026-10-22). `dip` is the only one with a consistent positive edge; see the open question under "Buy the dip".
 
 Event study run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
 Read `reports/event_study_<mode>.md`: forecast quality first (surprise hit rate, reaction in signal direction), then raw R per variant, then engine/FTMO rows.
@@ -272,6 +274,49 @@ Rules, fixed in `configs/strategy_imom.yaml` before the data was looked at:
 - It disappeared from 2022, a change in closing-auction dynamics that coincides with the growth of same-day (0DTE) options.
 - Lesson for one-trade-a-day CFD ideas: the edge has to be several bp per trade before costs, or the spread eats it.
 
+### Buy the dip (2026-10-22, new idea for a bigger edge per trade, cloud run)
+
+Hypothesis: short-term mean reversion in an uptrend. Buy at the US cash close when RSI(2) < 10 and the close is above its 200-day average. Sell at the first close above the 5-day average, or after 10 trading days. Long only, one position at a time. The rules are fixed in `configs/strategy_dip.yaml`.
+
+**Signal check** on FRED daily closes (`python scripts/run_dip_check.py` → `reports/dip_check.md`):
+- Net return = gross − round-trip cost − 6% a year financing over the calendar days held.
+- Excess = net − (mean uptrend-day return × days held), which is what holding the index in an uptrend would have earned.
+- Rule: excess > 0 with t ≥ 2 on NASDAQ-100 over the 2000–2017 holdout, and excess > 0 on 2018+ for both series.
+- Earlier years are context only: stale-price autocorrelation before about 2000 biases any dip test.
+
+**Cost fix after the first run** (disclosed in the config):
+- The first run charged costs.yaml's 3 NAS100 points at every historical index level. That is 0.3% of price in 2002 and 3% in the 1970s, which is why the 1970s showed a 0% hit rate.
+- It gave holdout excess +0.34%, t 1.74: NO-GO.
+- Spreads scale with price, so the cost is now a fixed 2 bp round trip. The measured NAS100 spread is about 0.5 bp.
+- The fix moved the verdict to PASS, so treat it as borderline.
+
+| Series | Window | Trades / yr | Net % per trade | Hit | Excess % | t |
+|---|---|---|---|---|---|---|
+| NASDAQ-100 | 2000–2017 (holdout) | 7.1 | 0.50 | 0.70 | 0.45 | 2.29 |
+| NASDAQ-100 | 2018+ (dev) | 8.4 | 0.52 | 0.68 | 0.25 | 1.18 |
+| NASDAQ Composite | 2000–2017 | 6.7 | 0.47 | 0.74 | 0.39 | 1.83 |
+| NASDAQ Composite | 2018+ | 8.4 | 0.62 | 0.74 | 0.38 | 1.91 |
+
+By decade (NASDAQ-100 excess): 2000s +0.87% (t 2.63), 2010s +0.07% (t 0.34), 2020s +0.37% (t 1.62). The edge is real in high-volatility decades and near zero in the calm 2010s.
+
+**Bar backtest** (`python scripts/run_variants.py --config strategy_dip.yaml --stem dip_compare`):
+- NAS100 / US500 / US30 CFD bars from 2018. Trades start in late 2018, after the 200-day warm-up.
+- Exits are at the 16:00 New York close, with a 2.5× daily ATR protective stop.
+- The engine now charges overnight financing for index CFDs (`financing_pct_per_year:` in costs.yaml, 6%). Turn-of-the-month runs predate it. FX results are unchanged.
+
+| Variant | Trades | Exp R | PF | Win | Max DD | Return / yr | OOS exp R | Folds + | MC success | FTMO path | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `dip` (NAS100) | 67 | 0.154 | 2.21 | 0.73 | 1.1% | 0.6% | 0.098 | 10/14 | 0.00 | +5.2%, target not reached | NO-GO |
+| `dip_us500` | 69 | 0.193 | 2.38 | 0.74 | 1.1% | 0.8% | 0.124 | 9/14 | 0.00 | +6.7% | NO-GO |
+| `dip_us30` | 71 | 0.048 | 1.22 | 0.66 | 1.7% | 0.2% | −0.008 | 8/14 | 0.00 | +1.7% | NO-GO |
+
+**Verdict: NO-GO by the gates**, but this is the first line with a consistent positive edge: PF 2.2, 73% winners, 10 of 14 OOS folds profitable, 1.1% max drawdown.
+- It fails on size, not sign. OOS expectancy is 0.10R against the 0.15R gate.
+- About 8 trades a year at 0.5% risk cannot reach +10%.
+- The stop is wide and rarely hit (6 of 67 trades), so 1R overstates the real risk per trade. That is why the drawdown is tiny.
+
+Open question for the owner: whether this edge is worth trading at a higher risk per trade, or across more indices (GER40, UK100, JP225 on the data branch need currency conversion). That is a sizing / gate decision, not a reason to retune the rules. Any change needs its own pre-registered check, since the holdout already passed only after the cost fix.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -282,4 +327,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 4. Macro swing is NO-GO: Phase A WEAK, Phase B fails expectancy, and the signal is negative on the 2012–2017 holdout. The trailing stop, basket, expected-hikes input and wider universe were all tried. Recommendation: stop this line rather than reweight it. A new macro hypothesis should come with its own holdout test (`run_macro_ic.py --validate`) before any bar run.
 5. Turn of the month is NO-GO; the decade table shows the calendar effect has faded since the 2010s.
 5b. Intraday momentum is NO-GO: below costs before 2022, gone after. `scripts/run_variants.py` runs any config's `variants:`.
+5c. Buy the dip is NO-GO by the gates but has a real, thin edge. It is the best candidate if the owner revisits risk sizing or adds more indices.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).
