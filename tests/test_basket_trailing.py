@@ -193,7 +193,7 @@ def test_macro_config_variants_and_compare_end_to_end():
     from src.strategy.macro_swing import generate_signals
 
     cfg = load_strategy_config("strategy_macro_swing.yaml")
-    assert set(cfg["variants"]) == {"fixed_tp", "trail", "basket"}
+    assert set(cfg["variants"]) >= {"fixed_tp", "trail", "basket", "hikes", "wide", "wide_hikes"}
     basket = variant_config(cfg, "basket")
     assert basket["risk"]["max_open_positions"] == 3 and basket["signal"]["take_profit_r"] == 0
     assert variant_config(cfg, "fixed_tp")["signal"]["take_profit_r"] == 3.0

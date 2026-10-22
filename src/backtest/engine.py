@@ -11,6 +11,7 @@ from src.backtest.costs import (
     commission_usd,
     entry_fill_price,
     exit_fill_price,
+    is_cross,
     position_size_lots,
 )
 from src.backtest.correlation import CorrelationGate
@@ -76,6 +77,19 @@ def maybe_move_stop_to_breakeven(
     return stop, False
 
 
+def usd_per_unit(ccy: str, ts: pd.Timestamp, closes: dict[str, pd.Series]) -> float:
+    """USD value of one unit of `ccy` at ts, from the USD major among the bars (last close at or before ts)."""
+    if ccy == "USD":
+        return 1.0
+    for sym, inverse in ((f"{ccy}USD", False), (f"USD{ccy}", True)):
+        s = closes.get(sym)
+        if s is not None and len(s):
+            v = float(s.asof(ts))
+            if v > 0:
+                return 1.0 / v if inverse else v
+    raise ValueError(f"no {ccy}USD or USD{ccy} bars to convert {ccy} P&L to USD")
+
+
 def stop_exit_reason(side: int, stop: float, entry: float, be_armed: bool, trailed: bool = False) -> str:
     if be_armed and abs(stop - entry) < 1e-12:
         return "breakeven_stop"
@@ -128,6 +142,12 @@ def run_backtest(
     trail_r = float(sig_cfg.get("trailing_stop_r") or 0.0)
 
     bars = {s: ensure_utc_index(df) for s, df in bars_by_symbol.items()}
+    closes = {s: b["close"] for s, b in bars.items()}
+
+    def quote_usd(sym: str, at: pd.Timestamp) -> float | None:
+        # crosses convert their quote-currency P&L through the USD major; other pairs keep the fixed formulas
+        return usd_per_unit(sym.upper()[3:6], at, closes) if is_cross(sym) else None
+
     balance = initial_balance
     equity = initial_balance
     trades: list[Trade] = []
@@ -246,7 +266,7 @@ def run_backtest(
 
             fill = exit_fill_price(side, exit_mid, sym, costs_cfg)
             lots = position["lots"]
-            pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym)
+            pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, ts))
             comm = commission_usd(lots, sym, costs_cfg)
             pnl -= comm
             r_mult = pnl / (initial_balance * risk_pct / 100.0)
@@ -306,7 +326,7 @@ def run_backtest(
             tp = fill + sig.side * tp_r * risk_price if tp_r > 0 else float("nan")
 
             lots = position_size_lots(
-                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg
+                equity, risk_pct, risk_price, sig.symbol, fill, costs_cfg, quote_usd(sig.symbol, ts)
             )
             if lots <= 0:
                 continue
@@ -337,7 +357,7 @@ def run_backtest(
         fill = exit_fill_price(position["side"], close, sym, costs_cfg)
         lots = position["lots"]
         side = position["side"]
-        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym)
+        pnl = _pnl_usd(side, position["entry_price"], fill, lots, sym, quote_usd(sym, last_ts))
         comm = commission_usd(lots, sym, costs_cfg)
         pnl -= comm
         trades.append(
@@ -374,10 +394,12 @@ def run_backtest(
     return result
 
 
-def _pnl_usd(side: int, entry: float, exit_px: float, lots: float, symbol: str) -> float:
-    """Approximate USD P&L (FX 100k lots; XAU 100 oz)."""
+def _pnl_usd(side: int, entry: float, exit_px: float, lots: float, symbol: str, usd_per_quote: float | None = None) -> float:
+    """Approximate USD P&L (FX 100k lots; XAU 100 oz); exact when `usd_per_quote` is given."""
     sym = symbol.upper()
     diff = (exit_px - entry) if side > 0 else (entry - exit_px)
+    if usd_per_quote is not None:
+        return diff * lots * 100000.0 * usd_per_quote
     if "XAU" in sym:
         return diff * lots * 100.0
     if sym.endswith("JPY"):

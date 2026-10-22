@@ -39,6 +39,8 @@ FRED_FX = {
     "USDJPY": "DEXJPUS",  # JPY per USD
     "AUDUSD": "DEXUSAL",  # USD per AUD
     "USDCAD": "DEXCAUS",  # CAD per USD
+    "NZDUSD": "DEXUSNZ",  # USD per NZD
+    "USDCHF": "DEXSZUS",  # CHF per USD
 }
 HORIZONS = (5, 10, 20, 40)
 HEADLINE_H = 20
@@ -62,14 +64,52 @@ def macro_cache_dir(macro_cfg: dict[str, Any]) -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
+def usd_legs(pair: str) -> list[str]:
+    """FRED pairs needed for `pair`: itself, or the USD majors of both currencies of a cross."""
+    pair = pair.upper()
+    if pair in FRED_FX:
+        return [pair]
+    legs = []
+    for ccy in (pair[:3], pair[3:6]):
+        leg = next((p for p in FRED_FX if p in (f"{ccy}USD", f"USD{ccy}")), None)
+        if leg is None:
+            return []
+        legs.append(leg)
+    return legs
+
+
+def _usd_value(ccy: str, fx: dict[str, pd.Series]) -> pd.Series | None:
+    """USD per unit of `ccy`."""
+    if ccy == "USD":
+        return None
+    if f"{ccy}USD" in fx:
+        return fx[f"{ccy}USD"]
+    if f"USD{ccy}" in fx:
+        return 1.0 / fx[f"USD{ccy}"]
+    return None
+
+
+def synthetic_cross(pair: str, fx: dict[str, pd.Series]) -> pd.Series:
+    """Cross rate from two USD majors on their common dates (EURJPY = EURUSD * USDJPY)."""
+    pair = pair.upper()
+    b, q = _usd_value(pair[:3], fx), _usd_value(pair[3:6], fx)
+    if b is None or q is None:
+        return pd.Series(dtype=float, name=pair)
+    both = pd.concat([b, q], axis=1, join="inner").dropna()
+    return (both.iloc[:, 0] / both.iloc[:, 1]).rename(pair)
+
+
 def fetch_fx(pairs: list[str], cache_dir: Path | None = None, force: bool = False) -> dict[str, Any]:
-    """Fetch FRED daily FX into data/macro/fx_{PAIR}.csv. Returns per-pair status."""
+    """Fetch FRED daily FX into data/macro/fx_{PAIR}.csv (crosses: their USD legs). Returns per-pair status."""
     status: dict[str, Any] = {}
+    needed: list[str] = []
     for pair in (p.upper() for p in pairs):
-        fid = FRED_FX.get(pair)
-        if fid is None:
-            status[pair] = {"error": "no FRED series for this pair"}
-            continue
+        legs = usd_legs(pair)
+        if not legs:
+            status[pair] = {"error": "no FRED series for this pair or its USD legs"}
+        needed += [leg for leg in legs if leg not in needed]
+    for pair in needed:
+        fid = FRED_FX[pair]
         name = fx_name(pair)
         if series_path(name, cache_dir).exists() and not force:
             s = load_series(name, cache_dir)
@@ -85,10 +125,13 @@ def fetch_fx(pairs: list[str], cache_dir: Path | None = None, force: bool = Fals
 
 
 def load_fx(pairs: list[str], cache_dir: Path | None = None) -> dict[str, pd.Series]:
+    """Cached FRED pairs; crosses are built from their cached USD legs."""
+    legs = {leg: load_series(fx_name(leg), cache_dir) for p in pairs for leg in usd_legs(p)}
+    legs = {k: v for k, v in legs.items() if not v.empty}
     out: dict[str, pd.Series] = {}
     for pair in (p.upper() for p in pairs):
-        s = load_series(fx_name(pair), cache_dir)
-        if not s.empty:
+        s = legs.get(pair) if pair in FRED_FX else synthetic_cross(pair, legs)
+        if s is not None and not s.empty:
             out[pair] = s
     return out
 
@@ -350,6 +393,89 @@ def phase_a_verdict(head: dict[str, Any], by_year: list[dict[str, Any]]) -> dict
     }
 
 
+def signal_ic(
+    panel: dict[str, pd.Series],
+    cfg: dict[str, Any],
+    fx: dict[str, pd.Series],
+    start: str | None,
+    end: str | None,
+    pairs: list[str] | None = None,
+    h: int = HEADLINE_H,
+) -> dict[str, Any]:
+    """Pooled h-day IC of a config's pair bias on [start, end], with the A3 verdict for that window."""
+    universe = [p.upper() for p in cfg["universe"]]
+    currencies = sorted({p[:3] for p in universe} | {p[3:6] for p in universe})
+    scores = build_currency_scores(panel, cfg.get("macro", {}) or {}, currencies=currencies)["scores"]
+    use = [p.upper() for p in (pairs or universe) if p.upper() in fx]
+    fr = ic_frame(pair_bias(scores, use), fx, h, start, end)
+    by_year = []
+    for year, g in fr.groupby(fr["date"].dt.year):
+        d0, d1 = g["date"].min(), g["date"].max()
+        partial = bool(d0 > pd.Timestamp(year=int(year), month=1, day=15, tz="UTC") or d1 < pd.Timestamp(year=int(year), month=12, day=15, tz="UTC"))
+        by_year.append({"year": int(year), **ic_stats(g, h), "partial": partial})
+    head = {"h": h, **ic_stats(fr, h)}
+    return {**head, "pairs": use, "by_year": by_year, "verdict": phase_a_verdict(head, by_year)["verdict"]}
+
+
+def validate_variants(
+    panel: dict[str, pd.Series],
+    configs: dict[str, dict[str, Any]],
+    fx: dict[str, pd.Series],
+    baseline: str,
+    dev: tuple[str | None, str | None],
+    holdout: tuple[str | None, str | None],
+    h: int = HEADLINE_H,
+) -> dict[str, Any]:
+    """Each config's IC on the dev and holdout windows; a variant is kept only if it beats
+    the baseline on both and is positive on the holdout (rule fixed in the config)."""
+    base_pairs = [p.upper() for p in configs[baseline]["universe"]]
+    rows = []
+    for name, cfg in configs.items():
+        row: dict[str, Any] = {"variant": name, "n_pairs": len(cfg["universe"])}
+        for label, (a, b) in (("dev", dev), ("holdout", holdout)):
+            row[label] = signal_ic(panel, cfg, fx, a, b, h=h)
+            row[f"{label}_base_pairs"] = signal_ic(panel, cfg, fx, a, b, pairs=base_pairs, h=h)
+        rows.append(row)
+    base = next(r for r in rows if r["variant"] == baseline)
+    for r in rows:
+        if r is base:
+            r["kept"] = None
+            continue
+        r["kept"] = bool(
+            r["dev"]["ic"] > base["dev"]["ic"] and r["holdout"]["ic"] > base["holdout"]["ic"] and r["holdout"]["ic"] > 0
+        )
+    return {"baseline": baseline, "dev": list(dev), "holdout": list(holdout), "h": h, "rows": rows}
+
+
+def render_validation_markdown(res: dict[str, Any]) -> str:
+    dev, hold = res["dev"], res["holdout"]
+    lines = ["# Macro signal validation: dev vs holdout", ""]
+    lines.append(f"- dev: {dev[0]} → {dev[1] or 'end'} · holdout: {hold[0]} → {hold[1] or 'end'} · pooled {res['h']}d Spearman IC")
+    lines.append(
+        f"- rule (fixed before the run): a variant is kept only if its IC beats `{res['baseline']}` on both windows "
+        "and is positive on the holdout"
+    )
+    lines.append("- `5 base pairs`: the same IC restricted to the baseline's pairs (only differs for wider universes)")
+    lines += ["", "| variant | pairs | dev IC (t) | holdout IC (t) | dev, 5 base pairs | holdout, 5 base pairs | A3 dev | A3 holdout | kept |"]
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for r in res["rows"]:
+        d, ho, db, hb = r["dev"], r["holdout"], r["dev_base_pairs"], r["holdout_base_pairs"]
+        kept = "baseline" if r["kept"] is None else ("**yes**" if r["kept"] else "no")
+        lines.append(
+            f"| {r['variant']} | {r['n_pairs']} | {_fmt(d['ic'])} ({_fmt(d['t'], 2)}) | {_fmt(ho['ic'])} ({_fmt(ho['t'], 2)}) | "
+            f"{_fmt(db['ic'])} | {_fmt(hb['ic'])} | {d['verdict']} | {ho['verdict']} | {kept} |"
+        )
+    lines += ["", "## By year (pooled 20d IC)", ""]
+    years = sorted({y["year"] for r in res["rows"] for w in ("holdout", "dev") for y in r[w]["by_year"]})
+    lines.append("| variant | " + " | ".join(str(y) for y in years) + " |")
+    lines.append("|---|" + "---|" * len(years))
+    for r in res["rows"]:
+        ic = {y["year"]: y["ic"] for w in ("holdout", "dev") for y in r[w]["by_year"]}
+        lines.append(f"| {r['variant']} | " + " | ".join(_fmt(ic.get(y), 2) for y in years) + " |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 # ----------------------------------------------------------------- report
 
 
@@ -455,6 +581,16 @@ def _clean(o: Any) -> Any:
     if isinstance(o, (float, np.floating)):
         return float(o) if math.isfinite(float(o)) else None
     return o
+
+
+def write_validation_report(res: dict[str, Any], out_dir: Path) -> dict[str, Path]:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    p_json = out_dir / "macro_ic_validation.json"
+    p_json.write_text(json.dumps(_clean(res), indent=2), encoding="utf-8")
+    p_md = out_dir / "macro_ic_validation.md"
+    p_md.write_text(render_validation_markdown(res), encoding="utf-8")
+    return {"json": p_json, "md": p_md}
 
 
 def write_macro_ic_report(result: dict[str, Any], out_dir: Path, tag: str | None = None) -> dict[str, Path]:

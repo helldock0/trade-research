@@ -31,12 +31,20 @@ def deep_merge(base: dict[str, Any], over: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def variant_config(strategy_cfg: dict[str, Any], name: str) -> dict[str, Any]:
+def variant_config(strategy_cfg: dict[str, Any], name: str, _chain: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Config for one variant; `extends: other` merges onto that variant instead of the base."""
     variants = strategy_cfg.get("variants") or {}
     if name not in variants:
         raise KeyError(f"unknown variant {name!r}; known: {sorted(variants)}")
-    base = {k: v for k, v in strategy_cfg.items() if k != "variants"}
-    return deep_merge(base, variants[name] or {})
+    if name in _chain:
+        raise ValueError(f"variant cycle: {' -> '.join(_chain + (name,))}")
+    over = dict(variants[name] or {})
+    parent = over.pop("extends", None)
+    if parent:
+        base = variant_config(strategy_cfg, parent, _chain + (name,))
+    else:
+        base = {k: v for k, v in strategy_cfg.items() if k not in ("variants", "validation")}
+    return deep_merge(base, over)
 
 
 def max_concurrent(trades: list[Trade]) -> int:

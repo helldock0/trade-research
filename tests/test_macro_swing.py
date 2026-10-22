@@ -291,7 +291,9 @@ def test_macro_swing_config_loads():
     m_cfg = cfg["macro"]
     assert set(m_cfg["series"]) >= {"rate_2y", "policy_rate", "cot_net", "global"}
     for group in ("rate_2y", "policy_rate"):
-        assert set(m_cfg["series"][group]) == set(m_cfg["currencies"])
+        assert set(m_cfg["series"][group]) >= set(m_cfg["currencies"])
+    # the wide variant's extra currencies have inputs too (NZD has no free daily 2y)
+    assert set(m_cfg["series"]["policy_rate"]) >= {"CHF", "NZD"} and "CHF" in m_cfg["series"]["rate_2y"]
     assert m_cfg["series"]["cot_net"]["USD"] == {"derive": "neg_mean_others"}
     comps = m_cfg["components"]
     assert comps["rate_momentum"]["weight"] > 0 and comps["positioning"]["sign"] == -1

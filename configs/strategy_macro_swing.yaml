@@ -67,6 +67,8 @@ macro:
       JPY: {source: mof, column: "2Y"}
       AUD: {source: rba, table: f2, series_id: FCMYGBAG2D}
       CAD: {source: boc, series: BD.CDN.2YR.DQ.YLD}
+      CHF: {source: snb, cube: rendeiduebd, dims: {D0: CHF, D1: 2J}}   # Swiss Confederation 2y; published monthly
+      # NZD: no free daily 2y reachable (RBNZ blocks scripted downloads); NZD scores without rate momentum
     policy_rate:
       USD: {source: bis_policy, area: US}
       EUR: {source: bis_policy, area: XM}
@@ -74,12 +76,16 @@ macro:
       JPY: {source: bis_policy, area: JP}
       AUD: {source: bis_policy, area: AU}
       CAD: {source: bis_policy, area: CA}
+      CHF: {source: bis_policy, area: CH}
+      NZD: {source: bis_policy, area: NZ}
     cot_net:                 # leveraged-money net / open interest (CFTC TFF)
-      EUR: {source: cftc_tff, market: "EURO FX", start_year: 2017}
-      GBP: {source: cftc_tff, market: "BRITISH POUND", start_year: 2017}
-      JPY: {source: cftc_tff, market: "JAPANESE YEN", start_year: 2017}
-      AUD: {source: cftc_tff, market: "AUSTRALIAN DOLLAR", start_year: 2017}
-      CAD: {source: cftc_tff, market: "CANADIAN DOLLAR", start_year: 2017}
+      EUR: {source: cftc_tff, market: "EURO FX", start_year: 2010}
+      GBP: {source: cftc_tff, market: "BRITISH POUND", start_year: 2010}
+      JPY: {source: cftc_tff, market: "JAPANESE YEN", start_year: 2010}
+      AUD: {source: cftc_tff, market: "AUSTRALIAN DOLLAR", start_year: 2010}
+      CAD: {source: cftc_tff, market: "CANADIAN DOLLAR", start_year: 2010}
+      CHF: {source: cftc_tff, market: "SWISS FRANC", start_year: 2010}
+      NZD: {source: cftc_tff, market: ["NEW ZEALAND DOLLAR", "NZ DOLLAR"], start_year: 2010}   # renamed in 2022
       USD: {derive: neg_mean_others}
     global:
       vix: {source: fred, id: VIXCLS}
@@ -147,6 +153,33 @@ variants:
   basket:                    # trailing stop + up to 3 positions, correlation-gated
     signal: {trigger: none, take_profit_r: 0, trailing_stop_r: 1.0, max_hold_days: 0}
     risk: {max_open_positions: 3, max_signed_corr: 0.6, corr_window_days: 60}
+  # Signal variants on the basket (added 2026-10-22, values fixed before any run).
+  # `extends` merges onto another variant.
+  hikes:                     # + market-implied rate path: 2y yield minus policy rate
+    extends: basket
+    macro:
+      components:
+        rate_expectations: {weight: 1.0, input: rate_2y, subtract: policy_rate, transform: level, standardize: cross_section}
+  wide:                      # + NZD, CHF and four crosses: more bets that are not the same USD bet
+    extends: basket
+    universe: [EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, NZDUSD, USDCHF, EURJPY, GBPJPY, AUDJPY, EURGBP]
+    macro:
+      currencies: [USD, EUR, GBP, JPY, AUD, CAD, CHF, NZD]
+  wide_hikes:
+    extends: wide
+    macro:
+      components:
+        rate_expectations: {weight: 1.0, input: rate_2y, subtract: policy_rate, transform: level, standardize: cross_section}
+
+# Pre-registered (2026-10-22, before any run) by scripts/run_macro_ic.py --validate:
+# a signal variant is kept only if its pooled 20d IC beats the base config's on
+# both periods and is positive on the holdout. Bars start in 2018, so the
+# holdout is checked on FRED daily FX only.
+validation:
+  baseline: fixed_tp
+  variants: [hikes, wide, wide_hikes]
+  dev: ["2018-01-01", null]
+  holdout: ["2012-01-01", "2017-12-31"]
 
 data:
   start: "2018-01-01"

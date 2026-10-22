@@ -59,6 +59,12 @@ def pip_value_per_lot(symbol: str, price: float) -> float:
     return 10.0
 
 
+def is_cross(symbol: str) -> bool:
+    """FX pair without a USD leg (EURJPY, EURGBP, ...): its P&L is in a non-USD quote currency."""
+    sym = symbol.upper()
+    return len(sym) == 6 and "USD" not in sym and "XAU" not in sym
+
+
 def position_size_lots(
     equity: float,
     risk_pct: float,
@@ -66,13 +72,19 @@ def position_size_lots(
     symbol: str,
     price: float,
     costs_cfg: dict[str, Any],
+    usd_per_quote: float | None = None,
 ) -> float:
+    """Lots risking risk_pct of equity over risk_price.
+
+    `usd_per_quote` (USD value of one unit of the quote currency) prices the pip
+    exactly; the engine passes it for crosses, where pip_value_per_lot cannot.
+    """
     risk_cash = equity * (risk_pct / 100.0)
     pip = pip_size(symbol, costs_cfg)
     stop_pips = risk_price / pip
     if stop_pips <= 0:
         return 0.0
-    pv = pip_value_per_lot(symbol, price)
+    pv = pip * 100000.0 * usd_per_quote if usd_per_quote else pip_value_per_lot(symbol, price)
     if pv <= 0:
         return 0.0
     lots = risk_cash / (stop_pips * pv)

@@ -5,7 +5,8 @@ Pipeline (all point-in-time):
        by its availability lag (market data: next day; COT: report + 3 days).
     2. For each component, build a raw value per currency:
          - per-currency inputs (rate_2y, policy_rate, cot_net): transform of
-           that currency's series (level / diff / pct_change over lookback)
+           that currency's series (level / diff / pct_change over lookback),
+           optionally minus another per-currency input (`subtract`)
          - global inputs (riskoff, oil, copper): transform of the global
            series times a per-currency beta
     3. Standardize: cross_section (z across currencies each day) or
@@ -164,6 +165,13 @@ def component_frame(
     df = frames["groups"].get(inp)
     if df is None or df.empty:
         return None
+    sub = ccfg.get("subtract")
+    if sub:
+        # spread of two per-currency inputs, e.g. 2y yield minus policy rate (market-implied rate path)
+        other = frames["groups"].get(str(sub).lower())
+        if other is None or other.empty:
+            return None
+        df = df - other.reindex(index=df.index, columns=df.columns)
     raw = transform(df, ccfg.get("transform", "level"), look)
     if std_mode == "cross_section":
         z = cross_sectional_z(raw)

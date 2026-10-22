@@ -10,6 +10,7 @@ Each series is cached at data/macro/{name}.csv with columns date,value. Sources:
     bis_policy  BIS WS_CBPOL daily policy rates (area, e.g. US, XM, GB, JP, AU, CA, CH, NZ)
     cftc_tff    CFTC Traders in Financial Futures yearly zips (market substring) ->
                 leveraged-money net position as a share of open interest
+    snb         Swiss National Bank data portal cube CSV (cube, dims: {column: value})
     csv         local drop-in file (path) with date,value columns
 
 Parsers are pure functions over text so they can be unit-tested offline.
@@ -44,6 +45,7 @@ BOE_URL = (
 )
 BIS_URL = "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.{area}?format=csv&startPeriod={start}"
 CFTC_TFF_URL = "https://www.cftc.gov/files/dea/history/fut_fin_txt_{year}.zip"
+SNB_URL = "https://data.snb.ch/api/cube/{cube}/data/csv/en"
 
 
 # ----------------------------------------------------------------- helpers
@@ -145,12 +147,19 @@ def parse_bis_csv(text: str, name: str = "bis") -> pd.Series:
     return _series(df["TIME_PERIOD"], df["OBS_VALUE"], name)
 
 
-def parse_cftc_tff(text: str, market: str, name: str = "cot") -> pd.Series:
-    """Leveraged-money net (long - short) as a share of open interest, by report date."""
-    df = pd.read_csv(io.StringIO(text))
+def parse_cftc_tff(text: str, market: str | list[str], name: str = "cot") -> pd.Series:
+    """Leveraged-money net (long - short) as a share of open interest, by report date.
+
+    `market` is a name substring, or a list of them for a market renamed over time.
+    """
+    df = pd.read_csv(io.StringIO(text), low_memory=False)
     df.columns = [str(c).strip() for c in df.columns]
     names = df["Market_and_Exchange_Names"].astype(str).str.upper()
-    sub = df[names.str.contains(market.upper(), regex=False)]
+    markets = [market] if isinstance(market, str) else list(market)
+    mask = pd.Series(False, index=df.index)
+    for mk in markets:
+        mask |= names.str.contains(str(mk).upper(), regex=False)
+    sub = df[mask]
     if sub.empty:
         return pd.Series(dtype=float, name=name)
     oi = pd.to_numeric(sub["Open_Interest_All"], errors="coerce")
@@ -158,7 +167,23 @@ def parse_cftc_tff(text: str, market: str, name: str = "cot") -> pd.Series:
         sub["Lev_Money_Positions_Short_All"], errors="coerce"
     )
     share = (net / oi.where(oi > 0)).astype(float)
-    return _series(sub["Report_Date_as_YYYY-MM-DD"], share, name)
+    # files before 2017 name the (still ISO-formatted) date column differently
+    date_col = "Report_Date_as_YYYY-MM-DD" if "Report_Date_as_YYYY-MM-DD" in sub.columns else "Report_Date_as_MM_DD_YYYY"
+    return _series(sub[date_col], share, name)
+
+
+def parse_snb_csv(text: str, dims: dict[str, str], name: str = "snb") -> pd.Series:
+    """SNB cube CSV: a few metadata lines, then "Date";"D0";...;"Value" (semicolon separated)."""
+    lines = text.replace("\ufeff", "").splitlines()
+    header_i = next((i for i, ln in enumerate(lines) if ln.strip().strip('"').startswith("Date")), None)
+    if header_i is None:
+        raise ValueError("SNB CSV: no Date header")
+    df = pd.read_csv(io.StringIO("\n".join(lines[header_i:])), sep=";", dtype=str)
+    for col, val in (dims or {}).items():
+        if col not in df.columns:
+            raise ValueError(f"SNB CSV: dimension {col} not in {list(df.columns)}")
+        df = df[df[col].str.strip() == str(val)]
+    return _series(df["Date"], df["Value"], name)
 
 
 def parse_local_csv(text: str, name: str = "csv") -> pd.Series:
@@ -222,6 +247,8 @@ def fetch_series(spec: dict[str, Any], name: str, start: str = "2010-01-01") -> 
             return pd.Series(dtype=float, name=name)
         s = pd.concat(parts)
         return s[~s.index.duplicated(keep="last")].sort_index()
+    if src == "snb":
+        return parse_snb_csv(_get(SNB_URL.format(cube=spec["cube"])).decode("utf-8-sig", errors="replace"), spec.get("dims") or {}, name)
     if src == "csv":
         p = Path(spec["path"])
         if not p.is_absolute():

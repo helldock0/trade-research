@@ -256,10 +256,29 @@ def test_fetch_fx_caches_fred_series(tmp_path, monkeypatch):
         return _walk(5, 1).rename(name)
 
     monkeypatch.setattr(mic, "fetch_series", fake_fetch)
-    status = fetch_fx(["eurusd", "USDJPY", "EURGBP"], tmp_path)
+    status = fetch_fx(["eurusd", "USDJPY", "EURXYZ"], tmp_path)
     assert status["EURUSD"]["cached"] is False and status["EURUSD"]["n"] == 5
-    assert "boom" in status["USDJPY"]["error"] and "no FRED" in status["EURGBP"]["error"]
+    assert "boom" in status["USDJPY"]["error"] and "no FRED" in status["EURXYZ"]["error"]
     assert (tmp_path / "fx_EURUSD.csv").is_file()
     assert fetch_fx(["EURUSD"], tmp_path)["EURUSD"]["cached"] is True
     assert calls == ["DEXUSEU", "DEXJPUS"]
     assert list(load_fx(["EURUSD", "USDJPY"], tmp_path)) == ["EURUSD"]
+    # a cross fetches its USD legs once each
+    calls.clear()
+    status = fetch_fx(["EURGBP", "GBPUSD"], tmp_path)
+    assert calls == ["DEXUSUK"] and status["EURUSD"]["cached"] is True
+    assert list(load_fx(["EURGBP"], tmp_path)) == ["EURGBP"]
+
+
+def test_synthetic_cross_from_usd_legs():
+    idx = pd.date_range("2024-01-01", periods=4, freq="B", tz="UTC")
+    fx = {
+        "EURUSD": pd.Series([1.10, 1.12, 1.08, 1.09], index=idx),
+        "USDJPY": pd.Series([150.0, 151.0, np.nan, 149.0], index=idx).dropna(),
+        "GBPUSD": pd.Series([1.25, 1.26, 1.24, 1.27], index=idx),
+    }
+    eurjpy = mic.synthetic_cross("EURJPY", fx)
+    assert len(eurjpy) == 3 and eurjpy.iloc[0] == pytest.approx(1.10 * 150.0)   # common dates only
+    assert mic.synthetic_cross("EURGBP", fx).iloc[1] == pytest.approx(1.12 / 1.26)
+    assert mic.synthetic_cross("AUDJPY", fx).empty
+    assert mic.usd_legs("EURJPY") == ["EURUSD", "USDJPY"] and mic.usd_legs("EURXYZ") == []
