@@ -82,3 +82,24 @@ def cross_bars(pair: str, legs: dict[str, pd.DataFrame]) -> pd.DataFrame:
     out = pd.DataFrame({"open": o, "high": pd.concat([o, c], axis=1).max(axis=1), "low": pd.concat([o, c], axis=1).min(axis=1), "close": c, "volume": 0.0})
     out.index.name = "timestamp"
     return out
+
+
+def daily_ohlc(m15: pd.DataFrame, close_hour_utc: int = 21) -> pd.DataFrame:
+    """Weekday bars that roll at `close_hour_utc` UTC: OHLC plus the timestamp of each day's last bar.
+
+    A day d covers [d-1 close_hour, d close_hour) UTC, so FX, gold and index CFDs share one daily clock.
+    """
+    x = ensure_utc_index(m15)
+    rule = dict(rule="24h", offset=f"{int(close_hour_utc)}h", label="right")
+    out = pd.DataFrame(
+        {
+            "open": x["open"].resample(**rule).first(),
+            "high": x["high"].resample(**rule).max(),
+            "low": x["low"].resample(**rule).min(),
+            "close": x["close"].resample(**rule).last(),
+            "last_ts": pd.Series(x.index, index=x.index).resample(**rule).last(),
+        }
+    )
+    out.index = out.index.normalize().tz_localize(None)
+    out.index.name = "date"
+    return out[(out.index.dayofweek < 5)].dropna(subset=["close"])

@@ -86,6 +86,8 @@ def run_variant(
     test_months: int = 6,
 ) -> dict[str, Any]:
     gen = signal_fn or resolve_signal_fn(cfg)
+    # per-strategy cost assumptions (e.g. holding fees) merged over configs/costs.yaml
+    costs = deep_merge(costs, cfg.get("costs_overrides") or {})
     signals = gen(bars, cfg, costs)
     full = run_backtest(signals, bars, cfg, costs)
     folds = walk_forward(bars, cfg, costs, train_months=train_months, test_months=test_months, signal_fn=gen)
