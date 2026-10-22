@@ -89,6 +89,13 @@ python scripts/run_rv_check.py
 # 1k) Independent re-check of gj-strat's USDJPY gotobi / vol-box edges on its raw minute files
 python -I scripts/run_jpy_recheck.py --datastore ../techlvling/gj-strat/datastore
 
+# 1l) One account: USDJPY vol-gotobi + NAS100 NY breakout v3 + NAS100 dip (configs/portfolio_combo.yaml)
+python scripts/bars_from_data_branch.py --pairs NAS100   # also creates the data/_data_branch worktree
+(cd data/_data_branch && git lfs pull --include="parquet/NAS100_M5.parquet,parquet/NAS100_M5_ask.parquet")
+cp data/_data_branch/parquet/NAS100_M5.parquet data/_data_branch/parquet/NAS100_M5_ask.parquet data/parquet/
+python -I scripts/run_nykz_breakout.py                     # NY breakout v3 alone (bid/ask M5)
+python -I scripts/run_portfolio_combo.py --datastore ../techlvling/gj-strat/datastore
+
 # 1e) macro_swing variants side by side: fixed target vs trailing stop vs correlation-gated basket
 python scripts/run_macro_compare.py
 

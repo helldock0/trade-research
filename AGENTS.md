@@ -27,6 +27,8 @@ from the repo's `data` branch (Git LFS M5 BID bars from 2018; crosses built from
   `data/macro/{NAME}.csv`, FRED ids or `YH_*` names fetched from Yahoo Finance (stooq is blocked from the cloud).
 - The same calendar CSV drives the news blackout (`src.features.news`) and the event study
   (`src.strategy.event_drift`, `src.research.event_study`).
+- NY kill-zone breakout (`nykz_breakout`) needs NAS100 M5 bid and ask bars: `data/parquet/NAS100_M5.parquet` and
+  `NAS100_M5_ask.parquet`, copied from the `data` branch (README step 1l).
 - The gj-strat re-check (`scripts/run_jpy_recheck.py`, owner request) reads Dukascopy 1-minute BID/ASK files from
   gj-strat's `datastore` (path in `configs/jpy_recheck.yaml`) with this repo's own decoder; run it with `python -I`.
 - Signals must stay point-in-time: anything used before a release comes from releases strictly before it.

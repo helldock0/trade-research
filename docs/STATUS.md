@@ -459,6 +459,45 @@ Robustness checks: descriptive only. They were added to the config after the ver
 
 **Verdict: gotobi CONFIRMED (candidate); vol-box REPRODUCED but FRAGILE.** Neither has been run through this repo's engine, walk-forward or Monte Carlo gates yet.
 
+### Portfolio: gotobi + NY breakout + Nasdaq dip (2026-10-22, owner request)
+
+One account runs three lines, each unchanged and net of its own costs:
+- **gotobi**: USDJPY vol-gotobi short (`configs/jpy_recheck.yaml`).
+- **nykz**: NAS100 NY kill-zone breakout v3 (`configs/strategy_nykz_breakout.yaml`). The code and configs come from branch `ccr-26c72736-m6dn5o` unchanged, and all 38 of its tests pass here. It reproduces exactly: 2023–26 gives 753 trades, +102.4R, max DD 36.3R; 2018–22 gives 1,041 trades, +0.153R.
+- **dip**: NAS100 buy-the-dip (`configs/strategy_dip.yaml`) through the engine.
+
+Rules were fixed in `configs/portfolio_combo.yaml` before the combined run:
+- Every trade risks 0.5% of the initial balance, with no compounding. Trades are entered from 2018-01 to 2026-10-07.
+- The repo's promotion gates apply, on 6-month calendar folds.
+- Command: `python -I scripts/run_portfolio_combo.py` → `reports/portfolio_combo.md`.
+
+| Book | Trades | /yr | Avg R (t) | PF | Return %/yr | Max DD % | Months + | Fold exp R | Fold DD % | MC | FTMO pass | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **all three** | 2,138 | 244 | +0.151 (3.51) | 1.22 | 18.5 | 19.4 | 64% | 0.145 | 14.9 | 0.78 | 75% | NO-GO |
+| same-side gate | 2,047 | 234 | +0.147 (3.34) | 1.21 | 17.1 | 17.2 | 62% | 0.143 | 13.4 | 0.77 | 75% | NO-GO |
+| nykz alone | 1,788 | 204 | +0.146 (2.89) | 1.19 | 14.9 | 18.1 | 58% | 0.144 | 14.5 | 0.75 | 75% | NO-GO |
+| gotobi alone | 283 | 32 | +0.185 (2.79) | 1.65 | 3.0 | 3.7 | 37% | 0.066 | 2.4 | 1.00 | 62% | NO-GO |
+| dip alone | 67 | 8 | +0.154 (2.66) | 2.21 | 0.6 | 1.1 | 40% | 0.082 | 0.7 | 0.00 | 0% | NO-GO |
+
+- The legs barely move together: monthly correlation is −0.04 to −0.08. Adding gotobi and dip to nykz lifts the return from 14.9% to 18.5% a year with almost the same max DD (19.4% vs 18.1%).
+- Every year is positive for the combined book, but 2019 (+4.3%) and 2025 (+3.7%) are thin.
+- nykz is 84% of the trades and 81% of the R, so the book behaves mostly like nykz.
+- The book fails 4 of the 5 gates, all near misses except DD:
+
+  | Gate | Combined | Needed |
+  |---|---|---|
+  | Fold expectancy | 0.145R | > 0.15R |
+  | PF | 1.22 | > 1.25 |
+  | Fold DD | 14.9% | < 8% |
+  | Monte Carlo | 0.78 | ≥ 0.80 |
+
+- Expectancy and PF are per trade and do not change with size, and the repo's Monte Carlo is fixed at 0.5% risk. So a smaller risk only fixes the DD gate: 0.25% gives about 7.5%.
+- FTMO 2-step, started at the first trade of every month: 75% pass at 0.5% risk, median 197 days.
+- The same-side gate (no second NAS100 long while one is open) lowers DD but also returns.
+- Caveat: each leg was chosen with some of 2018–2026 in view, so this is a check of the mix, not a clean out-of-sample test.
+
+**Verdict: NO-GO by the gates (a near miss).** It is the best book in this repo so far: three positive, uncorrelated legs. Paper or demo trade it before risking money.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -473,4 +512,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 5d. Trend following across FX / gold / indices is NO-GO: weak before 2010 and negative since.
 5e. Relative value on AUDNZD / EURGBP is NO-GO: no edge on the holdout.
 5f. gj-strat's USDJPY gotobi short is confirmed by an independent re-check, and vol-box is reproduced but fragile. Next step if wanted: run vol-gotobi through this repo's engine, walk-forward and Monte Carlo gates (M1 bars needed for the 00:55 entry), then a demo forward test. Don't retune its settings.
+5g. Portfolio of gotobi + NAS100 NY breakout v3 + NAS100 dip is NO-GO by the gates. It's a near miss: +0.151R a trade, 18.5% a year at 0.5% risk, but fold DD 14.9%. The legs are uncorrelated. The next step is a demo forward test, not retuning.
 6. Cloud sessions can backtest: `python scripts/bars_from_data_branch.py` builds `data/parquet/{PAIR}_M15.parquet` from the `data` branch (Git LFS M5 BID; crosses from M1 legs).
