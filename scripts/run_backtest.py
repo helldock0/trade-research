@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--strategy",
         default=None,
-        help="cssm | orb | csmo | htf_pullback | d1_mom | fail_fade | vwap_fade | msnr | donchian_atr | xau_htf_pullback | htf_adx_pullback",
+        help="cssm | orb | csmo | htf_pullback | d1_mom | fail_fade | vwap_fade | msnr | donchian_atr | xau_htf_pullback | htf_adx_pullback | event_drift",
     )
     parser.add_argument("--config", default=None, help="strategy yaml filename under configs/")
     parser.add_argument("--report", default=None, help="output summary json path")

@@ -16,6 +16,7 @@ KNOWN_STRATEGIES: tuple[str, ...] = (
     "donchian_atr",
     "xau_htf_pullback",
     "htf_adx_pullback",
+    "event_drift",
 )
 
 
@@ -70,6 +71,10 @@ def resolve_signal_fn(strategy_cfg: dict[str, Any]) -> Callable:
         from src.strategy.htf_adx_pullback import generate_signals
 
         return generate_signals
+    if sid in ("event_drift", "event"):
+        from src.strategy.event_drift import generate_signals
+
+        return generate_signals
     from src.strategy.cssm import generate_signals
 
     return generate_signals
@@ -97,4 +102,6 @@ def default_config_name(strategy: str | None = None) -> str:
         return "strategy_xau_htf_pullback.yaml"
     if s in ("htf_adx_pullback", "htf_adx", "adx_pullback"):
         return "strategy_htf_adx_pullback.yaml"
+    if s in ("event_drift", "event"):
+        return "strategy_event_drift.yaml"
     return "strategy_cssm.yaml"

@@ -19,6 +19,7 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `event_drift` | Pre-release drift / surprise / fade on macro releases | RESEARCH |
 
 ## Setup
 
@@ -42,10 +43,17 @@ $env:PYTHONIOENCODING="utf-8"
 # 1) Dukascopy OHLC -> data/parquet
 python scripts/download_data.py
 
+# 1b) Economic calendar (FXStreet) + FRED gasoline -> data/events_calendar.csv, data/macro/
+python scripts/download_calendar.py --gasoline
+
 # 2) Single strategy
 python scripts/run_backtest.py --strategy htf_adx_pullback
 python scripts/run_prop_sim.py --strategy htf_adx_pullback
 python scripts/run_walkforward.py --strategy htf_adx_pullback
+
+# 2b) Event study: pre / post / fade variants side by side
+python scripts/run_event_study.py
+python scripts/run_event_study.py --signal-mode nowcast_gap --tag cpi_nowcast
 
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
@@ -61,12 +69,12 @@ Outputs land under `reports/` (per-strategy JSON/CSV plus `batch_summary.json`).
 
 ```
 configs/          strategy + FTMO + cost YAMLs
-scripts/          download, backtest, prop sim, walk-forward, batch
+scripts/          download (bars, calendar), backtest, prop sim, walk-forward, batch, event study
 src/              data, features, strategies, backtest, prop, research
 tests/
 mt5/              EA stubs only after promotion GO
 docs/             tracked research notes
-data/             local parquet + logs (ignored)
+data/             local parquet, events_calendar.csv, macro/ (ignored)
 reports/          local run outputs (ignored)
 ```
 

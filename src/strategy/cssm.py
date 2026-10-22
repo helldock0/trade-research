@@ -33,6 +33,8 @@ class Signal:
     range_high: float
     range_low: float
     reason: str
+    # Optional scheduled exit (event studies); engine closes at first bar >= exit_time
+    exit_time: pd.Timestamp | None = None
 
 
 def _pip_size(symbol: str, costs_cfg: dict) -> float:

@@ -193,6 +193,11 @@ def run_backtest(
                 ):
                     exit_mid, reason = close, "max_hold"
 
+                # Scheduled time exit (event studies): close at first bar >= exit_time
+                exit_at = position.get("exit_time")
+                if reason is None and exit_at is not None and ts >= exit_at:
+                    exit_mid, reason = close, "time_exit"
+
                 # After surviving the bar, arm breakeven from close for subsequent bars
                 if reason is None:
                     new_stop, be_armed = maybe_move_stop_to_breakeven(
@@ -288,6 +293,7 @@ def run_backtest(
                 "session": sig.session,
                 "risk_price": risk_price,
                 "be_armed": False,
+                "exit_time": getattr(sig, "exit_time", None),
             }
 
     # Force close leftover

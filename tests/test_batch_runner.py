@@ -27,6 +27,7 @@ def test_list_strategies_canonical():
         "donchian_atr",
         "xau_htf_pullback",
         "htf_adx_pullback",
+        "event_drift",
     ]
     assert tuple(list_strategies()) == KNOWN_STRATEGIES
 
