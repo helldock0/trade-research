@@ -18,12 +18,12 @@ Detailed run artifacts stay in `reports/` (local only).
 | `msnr` | H4 MSNR + M15 rejection ~-0.079R | NO-GO |
 | `donchian_atr` | H1 Donchian + ATR ~-0.050R | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback; OOS expectancy ~-0.13R | NO-GO |
+| `macro_swing` | Macro pair bias (rates, carry, risk, oil, copper, CFTC), `trigger: none`; OOS expectancy ~+0.054R, Monte Carlo success 0.18. Phase A IC was WEAK. See "Macro swing" sections below. | NO-GO |
 
 ## Active
 
 | Strategy | Hypothesis | Status |
 |----------|------------|--------|
-| `macro_swing` | Fundamentals pick pair + direction, technicals time it. Per-currency score = weighted mean of standardized components: 2y-yield repricing (60d), policy-rate carry, risk-off beta (VIX + equities), oil for CAD, copper for AUD, contrarian CFTC positioning. Pair bias = base − quote; trade only when |bias| ≥ threshold; D1 pullback / breakout / none trigger; ATR stop; exit on bias flip. | WEAK at Phase A (IC check, no bars): pooled 20d IC 0.083 but non-overlap t 1.41 (< 2.0), same sign in 5 of 8 years. Phase B only with `trigger: none`; expect a marginal result. See "Phase A IC check" below. |
 | `event_drift` | Market prices an expected surprise before scheduled releases. Pre-release signal = surprise momentum (consensus anchoring) or gasoline CPI nowcast gap. Variants: `pre` (exit before print), `post` (hold through), `fade` (against the reaction). | RESEARCH — harness + tests in place; needs local run on parquet bars |
 
 Run: `python scripts/download_calendar.py --gasoline` then `python scripts/run_event_study.py`.
@@ -75,6 +75,34 @@ Pair bias: USDJPY +2.06, USDCAD +1.25, AUDUSD -1.03, GBPUSD -1.06, EURUSD -1.70 
 
 Context, not part of the verdict: from 2011 the pooled 20d IC is 0.020 (t 0.54) and carry drops to 0.021. Before 2018 that composite has no positioning (CFTC history starts in 2017 and needs a 378-day warm-up). So the 2018+ IC leans on the 2022–24 USD rate cycle. A naive t on the overlapping 20d returns would read 5.85; without the overlap correction this would have looked like a GO. Caveats: noon mid rates instead of 21:00 UTC BID bars; no costs. The one-extra-day-lag column shows no same-day leakage (e.g. CFTC data released Friday afternoon vs the Friday noon fix).
 
+### Macro swing: Phase B bar backtest (2026-10-22, cloud run, `trigger: none`)
+
+Inputs:
+- Bars: the M5 BID parquet files on the repo's `data` branch (Git LFS), resampled to M15, covering 2018-01-01 → 2026-10-20.
+- Calendar: refreshed from FXStreet, so the news blackout is on.
+- Macro panel: as in Phase A.
+- Config: `strategy_macro_swing.yaml` with only `signal.trigger` changed to `none`.
+
+| Run | Trades | Expectancy | Profit factor | Win rate | Max DD |
+|---|---|---|---|---|---|
+| Full-sample backtest | 280 | +0.040R | 1.08 | 0.29 | 11.4% |
+| Walk-forward OOS (14 folds, 18m train / 6m test) | | +0.054R | 1.30 | | 4.7% |
+
+Promotion gates:
+
+| Gate | Needed | Result | Pass |
+|---|---|---|---|
+| OOS expectancy | > 0.15R | 0.054R | no |
+| Profit factor | > 1.25 | 1.30 | yes |
+| Max drawdown | < 8% | 4.7% | yes |
+| Profitable folds | ≥ 3 of ≥ 4 | 7 of 14 | yes |
+| Monte Carlo success | ≥ 0.80 | 0.18 (ruin 0.20) | no |
+
+**Verdict: NO-GO.** This matches the Phase A read: there is a small positive edge, but it is far too thin for the prop gates.
+- Per the plan, `pullback` / `breakout` are compared only if `none` clears the gates. It does not, so they were not run.
+- Weights were not retuned.
+- Caveat: these M15 bars were built from M5, not the owner's native M15 files, so a local run can differ slightly.
+
 ## Next
 
 Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-fundamentals-next-steps.md`.
@@ -82,4 +110,5 @@ Hand-off plan with phases, decision rules and pitfalls: `docs/plans/2026-10-22-f
 1. Run the event study locally on parquet bars; judge `pre` vs `post` vs `fade` on raw t-stats before any knob.
 2. Price drift can exist even with a weak surprise forecast (positioning, not forecasting). If `pre` is flat too, the pricing-in line is NO-GO for these series.
 3. Plug in a stronger forecast via `nowcast.external_csv` (Cleveland Fed nowcast vintages, Kalshi CPI implied) and re-run `--calendar-only` before spending bars on it.
-4. Macro swing: Phase A is WEAK, so Phase B runs with `trigger: none` only: `python scripts/download_macro.py`, then `run_backtest.py` and `run_walkforward.py` for `macro_swing` with `signal.trigger: none`. Compare `pullback` / `breakout` only if `none` clears the promotion gates. Component weights stay priors; do not fit them to the IC table.
+4. Macro swing is NO-GO (Phase A WEAK, Phase B fails expectancy and Monte Carlo). Do not retune weights or triggers. A next macro hypothesis needs a different input (e.g. rate expectations from futures / OIS), not new weights.
+5. M5 / M1 BID bars for the majors are on the `data` branch via Git LFS (`git lfs pull --include=...`), so cloud sessions can backtest by resampling them to M15.
