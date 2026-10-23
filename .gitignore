@@ -4,6 +4,7 @@
 *.parquet
 *.csv
 !configs/**
+!dashboard/**
 
 # Python
 __pycache__/

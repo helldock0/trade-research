@@ -13,5 +13,7 @@ Do not use another data folder unless explicitly asked. Prefer existing files ov
 ## Repo layout
 
 - Code/configs/tests are tracked; `data/` and `reports/` are local-only.
+- A snapshot of `data/parquet` (M1 bid; M5 bid + ask for 13 markets) lives on the orphan `data` branch
+  via Git LFS; its README has restore steps. Never merge it into code branches.
 - Research ledger: `docs/STATUS.md`
 - Package name: `trade-research` (`pyproject.toml`)

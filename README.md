@@ -3,6 +3,8 @@
 Private research harness for FTMO-style prop challenge strategies.
 
 Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitignored).
+A snapshot of the parquet files (M1 bid; M5 bid + ask for 13 markets, 2018 onward) is on the `data`
+branch via Git LFS; see that branch's README to restore it into `data/parquet`.
 
 ## Strategy status
 
@@ -19,6 +21,9 @@ Local market data: `data/parquet` (gitignored). Run outputs: `reports/` (gitigno
 | `vwap_fade` | Session VWAP stretch fade | NO-GO |
 | `donchian_atr` | H1 Donchian breakout + ATR stop | NO-GO |
 | `xau_htf_pullback` | XAUUSD H4/M15 EMA pullback | NO-GO |
+| `nykz_breakout` | NAS100 NY kill-zone (07-10 NY) range breakout, next-candle confirm, 2x ATR stop, 4R | v3 ~+0.136R, testing |
+| `nykz_breakout_prop` | v3 rules at 1% risk, for prop accounts | FTMO sim ~52% pass, ~2 months |
+| `asiakz_ny` | Asian range (5:30-9:30 IST) traded in the NY or London session: continuation / fresh / sweep reversal | NO-GO |
 
 ## Setup
 
@@ -50,6 +55,25 @@ python scripts/run_walkforward.py --strategy htf_adx_pullback
 # 2a) Backtest + FTMO for all (or a subset)
 python scripts/run_all.py
 python scripts/run_all.py --strategies cssm,orb
+
+# 2b) NAS100 NY kill-zone breakout (standalone: bid/ask fills)
+python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01
+python scripts/download_data.py --symbols NAS100 --intervals M5 --start 2023-01-01 --side ask
+python scripts/run_nykz_breakout.py
+python scripts/run_nykz_breakout.py --config strategy_nykz_breakout_prop.yaml   # prop (v3 rules)
+python scripts/prop_sim_nykz_breakout.py   # FTMO 2-step pass rates for the prop config at several risk levels
+python scripts/markets_nykz_breakout.py   # v3 on other indices and FX majors (needs their M5 bid/ask files)
+python scripts/portfolio_nykz_breakout.py # NAS100 + US500, one trade at a time vs alone vs both at once
+python scripts/instant_sim_nykz_breakout.py   # instant-funded first payout (Blueberry Instant Elite rules by default)
+python scripts/compare_nykz_breakout.py --grid break   # clean-break / stop placement, 2023-26 + 2018-22
+python scripts/compare_nykz_breakout.py --grid exit    # ATR stop size / breakeven / trailing
+python scripts/compare_nykz_breakout.py --grid fvg     # FVG retest / limit entries vs next close
+python scripts/compare_nykz_breakout.py --grid rr      # take-profit targets on the config's rules
+python scripts/compare_nykz_breakout.py --grid weekday # skip one weekday at a time
+python scripts/compare_nykz_breakout.py --grid session # earlier entry cutoffs (e.g. London overlap)
+python scripts/compare_nykz_breakout.py --grid news    # skip / only US high-impact news days
+python scripts/compare_nykz_breakout.py --grid vol     # skip low-volatility days (daily ATR / kill-zone range)
+python scripts/compare_nykz_breakout.py --config strategy_asiakz_ny.yaml --grid modes   # Asian range in NY
 
 # 3) Tests
 python -m pytest -q

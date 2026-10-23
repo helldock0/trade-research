@@ -1,0 +1,1189 @@
+<style>
+  .kz { display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); color: var(--color-fg); padding-block: var(--cds-pad-md) var(--cds-pad-xl); }
+  .kz-head { display: grid; gap: var(--cds-gap-sm); }
+  .kz-title { margin: 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); text-wrap: balance; }
+  .kz-rules, .kz-account { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); max-width: 75ch; }
+  .kz-takeaway { margin: 0; font-size: var(--cds-font-size-body); max-width: 75ch; line-height: 1.5; }
+  .kz-section-title { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+  .kz-kpis { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr)); }
+  .kz-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md); display: grid; gap: var(--cds-gap-xs); align-content: start; min-width: 0; }
+  .kz-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kz-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .kz-note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+  .kz .kz-bad { color: var(--color-bad); }
+  .kz .kz-ok { color: var(--color-ok); }
+  .kz-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-sm); align-content: start; min-width: 0; }
+  .kz-card-head { display: grid; gap: var(--cds-gap-xs); }
+  .kz-card-title { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+  .kz-card-note { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kz-grid { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+  .kz-chart { position: relative; min-width: 0; }
+  .kz-chart-eq { min-height: 260px; }
+  .kz-chart-dd { min-height: 120px; }
+  .kz-chart-bars { min-height: 220px; }
+  .kz-chart svg { display: block; overflow: visible; }
+  .kz-tick { font-size: var(--cds-font-size-caption); fill: var(--color-fg-muted); font-family: var(--font-anthropic-sans); font-variant-numeric: tabular-nums; }
+  .kz-val { font-size: var(--cds-font-size-caption); fill: var(--color-fg); font-family: var(--font-anthropic-sans); font-variant-numeric: tabular-nums; }
+  .kz-measure { position: absolute; visibility: hidden; width: 0; height: 0; }
+  .kz-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+  .kz-legend span { display: inline-flex; align-items: center; gap: var(--cds-gap-xs); }
+  .kz-sw { display: inline-block; width: 0.75rem; height: 0.2rem; border-radius: 2px; flex: none; }
+  .kz-sw-ref { border-top: 2px dashed var(--cds-chart-reference); height: 0; }
+  .kz-sublabel { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kz-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; white-space: nowrap; display: grid; gap: 2px; }
+  .kz-tip-title { color: var(--cds-text-secondary); }
+  .kz-tip-row { display: flex; align-items: center; gap: var(--cds-gap-xs); }
+  .kz-tip-name { flex: 1; }
+  .kz-tip-row b { margin-left: var(--cds-gap-sm); }
+  .kz-stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--cds-gap-sm) var(--cds-gap-md); }
+  .kz-stats div { display: grid; gap: 2px; padding-block: var(--cds-pad-xs); border-bottom: 1px solid var(--color-border-line); }
+  .kz-stats dt { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kz-stats dd { margin: 0; font-variant-numeric: tabular-nums; font-size: var(--cds-font-size-body); }
+  .kz-cal-wrap { overflow-x: auto; position: relative; min-height: 8rem; }
+  .kz-cal { display: grid; grid-template-columns: 3rem repeat(12, minmax(2.75rem, 1fr)) minmax(3.5rem, 1.2fr); gap: 3px; min-width: 42rem; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .kz-cal-h { color: var(--color-fg-muted); text-align: center; padding-block: 2px; }
+  .kz-cal-y { color: var(--color-fg-muted); display: flex; align-items: center; }
+  .kz-cal-c { border-radius: 4px; text-align: center; padding-block: var(--cds-pad-sm); background: var(--color-bg); min-height: 1.2em; }
+  .kz-cal-t { font-weight: var(--cds-font-weight-medium); }
+  .kz-tablebox { overflow-x: auto; }
+  .kz-scroll { max-height: 34rem; overflow: auto; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); }
+  .kz-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+  .kz-table th, .kz-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm); text-align: left; white-space: nowrap; border-bottom: 1px solid var(--color-border-line); }
+  .kz-table th { position: sticky; top: 0; background: var(--color-panel); color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); z-index: 1; }
+  .kz-table .num { text-align: right; }
+  .kz-sort { appearance: none; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .kz-sort:focus-visible, .kz-input:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .kz-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+  .kz-input { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-bg); color: var(--color-fg); min-width: 0; }
+  .kz-search { flex: 1 1 12rem; }
+  .kz-count { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .kz-nav { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); }
+  .kz-navbtn { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); color: var(--color-fg); cursor: pointer; }
+  .kz-navbtn:hover { background: var(--color-bg); }
+  .kz-navbtn:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .kz-steps { margin: 0; padding-left: 1.4em; display: grid; gap: var(--cds-gap-sm); max-width: 80ch; line-height: 1.5; }
+  .kz-steps li::marker { color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+  .kz .kz-steps b { font-weight: var(--cds-font-weight-medium); }
+  .kz-example { display: grid; gap: var(--cds-gap-sm); padding-top: var(--cds-pad-md); border-top: 1px solid var(--color-border-line); }
+  .kz-sub-title { margin: 0; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+  .kz-prop-tiles { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
+  .kz-table tr.kz-row-hi td { background: color-mix(in srgb, var(--color-fg) 7%, transparent); font-weight: var(--cds-font-weight-medium); }
+  .kz-barcell { display: flex; align-items: center; gap: var(--cds-gap-sm); justify-content: flex-end; }
+  .kz-bar { display: inline-block; height: 0.5rem; border-radius: 4px; background: color-mix(in srgb, var(--color-fg) 35%, transparent); }
+  .kz-bartrack { display: inline-block; width: 5rem; height: 0.5rem; border-radius: 4px; background: color-mix(in srgb, var(--color-fg) 8%, transparent); overflow: hidden; }
+  .kz-method { margin: 0; padding-left: 1.2em; display: grid; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); max-width: 80ch; }
+  .kz-failed { display: flex; align-items: center; justify-content: center; gap: var(--cds-gap-xs); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); min-height: inherit; }
+  .kz-dot { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--color-bad); flex: none; }
+  .kz [data-dash-source-state=empty] { color: transparent; }
+  .kz [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+</style>
+
+<div class="kz">
+  <header class="kz-head" id="overview">
+    <h1 class="kz-title">NAS100 kill-zone backtest</h1>
+    <p class="kz-rules">NY kill-zone range 7:00–10:00 AM New York (4:30–7:30 PM IST in US summer, 5:30–8:30 PM in winter). Rule v3: a 5-min candle closes outside the range and the next candle also closes outside it; entry at that second close. If the next candle closes back inside, wait for the next break. Stop 2× ATR (14 five-minute candles) from the entry, 4R target, held until stop or target, one trade at a time. Costs are Blueberry's NAS100.p spread (at least 1.26 points) and overnight swap (long −$58.50, short +$7.60 per lot a night, 3× on Friday). Trade days <span data-source="summary" data-field="first_date" data-row="0" data-fmt="text" class="dash-skeleton">—</span> to <span data-source="summary" data-field="last_date" data-row="0" data-fmt="text" class="dash-skeleton">—</span>.</p>
+    <p class="kz-takeaway" id="takeaway">Net <span data-source="summary" data-field="total_r" data-row="0" data-fmt="r1" data-tone="0" class="dash-skeleton">—</span> (<span data-source="summary" data-field="net_pnl" data-row="0" data-fmt="usdS" data-tone="0" class="dash-skeleton">—</span>) over <span data-source="summary" data-field="trades" data-row="0" data-fmt="int" class="dash-skeleton">—</span> trades. The win rate was <span data-source="summary" data-field="win_rate" data-row="0" data-fmt="pct" data-tone="0.2" class="dash-skeleton">—</span>, and a 4R target needs 20% to break even. Overnight swap cost <span data-source="costs" data-field="swap_r" data-row="0" data-fmt="r1" data-tone="0" class="dash-skeleton">—</span> (<span data-source="costs" data-field="swap_usd" data-row="0" data-fmt="usdS" data-tone="0" class="dash-skeleton">—</span>) on the <span data-source="costs" data-field="overnight_share" data-row="0" data-fmt="pct0" class="dash-skeleton">—</span> of trades held past 2:30 AM IST. With no spread or swap, the same rules made <span data-source="zero" data-field="total_r" data-row="0" data-fmt="r1" data-tone="0" class="dash-skeleton">—</span>.</p>
+    <p class="kz-account">Account $100,000. Risk 1% ($1,000 = 1R) per trade, fixed, not compounded.</p>
+  </header>
+
+  <nav class="kz-nav" aria-label="Sections">
+    <button class="kz-navbtn" type="button" data-go="kpis">Results</button>
+    <button class="kz-navbtn" type="button" data-go="how">How to place the trade</button>
+    <button class="kz-navbtn" type="button" data-go="prop">Prop firm pass rates</button>
+    <button class="kz-navbtn" type="button" data-go="blueberry">Blueberry $10K plan</button>
+    <button class="kz-navbtn" type="button" data-go="log">Trade log</button>
+  </nav>
+
+  <section class="kz-kpis" id="kpis" aria-label="Headline figures">
+    <div class="kz-tile">
+      <span class="kz-label">Net P&amp;L</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="net_pnl" data-row="0" data-fmt="usdS" data-tone="0">—</span>
+      <span class="kz-note"><span class="dash-skeleton" data-source="summary" data-field="return_pct" data-row="0" data-fmt="pctS">—</span> of the account</span>
+    </div>
+    <div class="kz-tile">
+      <span class="kz-label">Win rate</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="win_rate" data-row="0" data-fmt="pct" data-tone="0.2">—</span>
+      <span class="kz-note"><span class="dash-skeleton" data-source="summary" data-field="wins" data-row="0" data-fmt="int">—</span> wins, <span class="dash-skeleton" data-source="summary" data-field="losses" data-row="0" data-fmt="int">—</span> losses</span>
+    </div>
+    <div class="kz-tile">
+      <span class="kz-label">Profit factor</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="profit_factor" data-row="0" data-fmt="f2" data-tone="1">—</span>
+      <span class="kz-note">Gross wins ÷ gross losses. Above 1 makes money.</span>
+    </div>
+    <div class="kz-tile">
+      <span class="kz-label">Expectancy</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="expectancy_r" data-row="0" data-fmt="r" data-tone="0">—</span>
+      <span class="kz-note"><span class="dash-skeleton" data-source="summary" data-field="expectancy_usd" data-row="0" data-fmt="usdS2">—</span> per trade on average</span>
+    </div>
+    <div class="kz-tile">
+      <span class="kz-label">Max drawdown</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="max_dd_usd" data-row="0" data-fmt="usdS" data-tone="0">—</span>
+      <span class="kz-note"><span class="dash-skeleton" data-source="summary" data-field="max_dd_pct" data-row="0" data-fmt="pctS">—</span> from the peak balance</span>
+    </div>
+    <div class="kz-tile">
+      <span class="kz-label">Trades</span>
+      <span class="kz-big dash-skeleton" data-source="summary" data-field="trades" data-row="0" data-fmt="int">—</span>
+      <span class="kz-note"><span class="dash-skeleton" data-source="summary" data-field="longs" data-row="0" data-fmt="int">—</span> long, <span class="dash-skeleton" data-source="summary" data-field="shorts" data-row="0" data-fmt="int">—</span> short</span>
+    </div>
+  </section>
+
+  <section class="kz-card" id="how">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">How to place the trade (v3)</h2>
+      <p class="kz-card-note">NAS100, 5-minute chart. IST times are for US summer time; add 1 hour from early November to mid-March.</p>
+    </div>
+    <ol class="kz-steps">
+      <li><b>Mark the range.</b> The highest high and lowest low of the 5-minute candles from 4:30 PM to 7:30 PM IST (7:00–10:00 AM New York).</li>
+      <li><b>Wait for a break.</b> From 7:30 PM IST, wait for a 5-minute candle to close above the high or below the low. A wick alone doesn't count.</li>
+      <li><b>Wait for the confirming candle.</b> The next candle must also close outside the range on the same side. If it closes back inside, forget that break and keep waiting.</li>
+      <li><b>Enter at its close.</b> Buy above the high, sell below the low. Skip the day if this candle closes below the break candle's low minus 2 points (for a buy) or above its high plus 2 points (for a sell).</li>
+      <li><b>Set the stop.</b> 2 × ATR(14) on the 5-minute chart, read at entry, away from your entry price. On TradingView set the ATR smoothing to SMA to match the backtest.</li>
+      <li><b>Set the target.</b> 4 × the stop distance (4R).</li>
+      <li><b>Size the position.</b> Lots = money at risk ÷ (stop distance in points × value of 1 point for 1 lot). Prop account: risk 1% of the starting balance. Your broker's contract details give the point value.</li>
+      <li><b>Leave it alone.</b> No moving the stop and no partial closes. The trade can stay open overnight and over the weekend.</li>
+      <li><b>One trade at a time, one per day.</b> Only the first confirmed break counts. No new trade while one is open, and no new entries after 2:25 AM IST (3:25 AM in winter).</li>
+    </ol>
+    <div class="kz-example" id="how-example">
+      <h3 class="kz-sub-title">Example: 14 October 2026</h3>
+      <dl class="kz-stats">
+        <div><dt>Direction</dt><dd class="dash-skeleton" data-source="trades" data-field="side" data-where="date=2026-10-14" data-fmt="text">—</dd></div>
+        <div><dt>Entry time (IST)</dt><dd class="dash-skeleton" data-source="trades" data-field="entry_time_ist" data-where="date=2026-10-14" data-fmt="text">—</dd></div>
+        <div><dt>Entry</dt><dd class="dash-skeleton" data-source="trades" data-field="entry" data-where="date=2026-10-14" data-fmt="price">—</dd></div>
+        <div><dt>Stop</dt><dd class="dash-skeleton" data-source="trades" data-field="stop" data-where="date=2026-10-14" data-fmt="price">—</dd></div>
+        <div><dt>Target (4R)</dt><dd class="dash-skeleton" data-source="trades" data-field="target" data-where="date=2026-10-14" data-fmt="price">—</dd></div>
+        <div><dt>Stop distance</dt><dd class="dash-skeleton" data-source="example_size" data-field="stop_points" data-row="0" data-fmt="pts">—</dd></div>
+        <div><dt>Size at $1,000 risk, $1 per point per lot</dt><dd class="dash-skeleton" data-source="example_size" data-field="lots" data-row="0" data-fmt="lots">—</dd></div>
+        <div><dt>Result</dt><dd class="dash-skeleton" data-source="trades" data-field="exit_reason" data-where="date=2026-10-14" data-fmt="text">—</dd></div>
+        <div><dt>Closed (IST)</dt><dd class="dash-skeleton" data-source="trades" data-field="exit_time_ist" data-where="date=2026-10-14" data-fmt="text">—</dd></div>
+        <div><dt>R</dt><dd class="dash-skeleton" data-source="trades" data-field="r" data-where="date=2026-10-14" data-fmt="r" data-tone="0">—</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="kz-card" id="prop">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">Prop firm pass rates (FTMO 2-step)</h2>
+      <p class="kz-card-note">A challenge started at every trade from 2018 to 2026 and replayed on v3's real trades. Phase 1 needs +10% and phase 2 +5%; max loss 10% of the starting balance, max daily loss 5%, at least 4 trading days. Losses inside open trades count. Your prop setting is 1% risk.</p>
+    </div>
+    <div class="kz-prop-tiles" aria-label="At 1% risk per trade">
+      <div class="kz-tile">
+        <span class="kz-label">Pass rate at 1% risk</span>
+        <span class="kz-big dash-skeleton" data-source="prop_pass_rates" data-field="pass_rate" data-where="risk_pct=1.0" data-fmt="pct">—</span>
+        <span class="kz-note">of finished challenges passed both phases</span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Typical time to pass</span>
+        <span class="kz-big dash-skeleton" data-source="prop_pass_rates" data-field="median_days_to_pass" data-where="risk_pct=1.0" data-fmt="days">—</span>
+        <span class="kz-note">median, calendar days; 75% within <span class="dash-skeleton" data-source="prop_pass_rates" data-field="p75_days_to_pass" data-where="risk_pct=1.0" data-fmt="days">—</span></span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Failed in phase 1</span>
+        <span class="kz-big dash-skeleton" data-source="prop_pass_rates" data-field="fail_phase1" data-where="risk_pct=1.0" data-fmt="pct">—</span>
+        <span class="kz-note">hit the 10% max loss first</span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Failed in phase 2</span>
+        <span class="kz-big dash-skeleton" data-source="prop_pass_rates" data-field="fail_phase2" data-where="risk_pct=1.0" data-fmt="pct">—</span>
+        <span class="kz-note">after passing phase 1</span>
+      </div>
+    </div>
+    <div class="kz-tablebox">
+      <table class="kz-table" id="prop-table" data-source="prop_pass_rates" data-row-key="risk_pct">
+        <thead><tr>
+          <th data-field="risk_pct">Risk per trade</th>
+          <th data-field="pass_rate" class="num">Pass rate</th>
+          <th data-field="fail_phase1" class="num">Fail in phase 1</th>
+          <th data-field="fail_phase2" class="num">Fail in phase 2</th>
+          <th data-field="pass_rate_2018_22" class="num">Pass, 2018–22 starts</th>
+          <th data-field="pass_rate_2023_26" class="num">Pass, 2023–26 starts</th>
+          <th data-field="median_days_to_pass" class="num">Median days to pass</th>
+          <th data-field="p75_days_to_pass" class="num">75% pass within (days)</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="kz-card-note">Lower risk passes more often but takes much longer; at the lowest risk nothing failed, but it is very slow and recent challenges had not finished. The backtest edge is probably a bit optimistic, so real pass rates are likely lower.</p>
+  </section>
+
+  <section class="kz-card" id="blueberry">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">Blueberry Funded Instant Elite: your $10K plan</h2>
+      <p class="kz-card-note">$10,000 Instant Elite on MT5, $280 after the coupon ($400 list), no add-ons. Rules from Blueberry's help page for accounts bought from 12 March 2026. Simulated by opening an account at every v3 trade from 2018 to 2026 and replaying the real trades.</p>
+    </div>
+    <dl class="kz-stats">
+      <div><dt>Risk per trade</dt><dd>0.25% = $25</dd></div>
+      <div><dt>Max loss on one trade</dt><dd>1.5% = $150 (a breach closes the account)</dd></div>
+      <div><dt>Max drawdown</dt><dd>$1,000 trailing; counts open-trade highs and stops rising at $10,000</dd></div>
+      <div><dt>Payout needs</dt><dd>$100+ realised profit, 5 days that each close $50+ in profit, 14-day cycle</dd></div>
+      <div><dt>Profit split</dt><dd>80% to you</dd></div>
+      <div><dt>News</dt><dd>No high-impact news trading: skip FOMC days</dd></div>
+    </dl>
+    <div class="kz-prop-tiles" aria-label="At 0.25% risk">
+      <div class="kz-tile">
+        <span class="kz-label">Reached the first $100 payout</span>
+        <span class="kz-big dash-skeleton" data-source="blueberry_10k" data-field="reached" data-where="scenario=0.25%25 risk, first $100 payout" data-fmt="pct">—</span>
+        <span class="kz-note">of finished accounts; <span class="dash-skeleton" data-source="blueberry_10k" data-field="lost_trailing_dd" data-where="scenario=0.25%25 risk, first $100 payout" data-fmt="pct">—</span> hit the drawdown limit first</span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Typical time to first $100</span>
+        <span class="kz-big dash-skeleton" data-source="blueberry_10k" data-field="median_days" data-where="scenario=0.25%25 risk, first $100 payout" data-fmt="days">—</span>
+        <span class="kz-note">75% within <span class="dash-skeleton" data-source="blueberry_10k" data-field="p75_days" data-where="scenario=0.25%25 risk, first $100 payout" data-fmt="days">—</span></span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Fee back ($350 profit)</span>
+        <span class="kz-big dash-skeleton" data-source="blueberry_10k" data-field="median_days" data-where="scenario=0.25%25 risk, fee back ($350 profit)" data-fmt="days">—</span>
+        <span class="kz-note">typical; <span class="dash-skeleton" data-source="blueberry_10k" data-field="reached" data-where="scenario=0.25%25 risk, fee back ($350 profit)" data-fmt="pct0">—</span> got there, 75% of them within <span class="dash-skeleton" data-source="blueberry_10k" data-field="p75_days" data-where="scenario=0.25%25 risk, fee back ($350 profit)" data-fmt="days">—</span></span>
+      </div>
+      <div class="kz-tile">
+        <span class="kz-label">Average income per month</span>
+        <span class="kz-big dash-skeleton" data-source="bb_income" data-field="income_per_month" data-row="0" data-fmt="usd">—</span>
+        <span class="kz-note">after the 80% split, from v3's average month at $25 per R</span>
+      </div>
+    </div>
+    <p class="kz-card-note">Sizing the 14 Oct example: a <span class="dash-skeleton" data-source="example_size" data-field="stop_points" data-row="0" data-fmt="pts">—</span> stop at $25 risk is <span class="dash-skeleton" data-source="example_size" data-field="lots_25_at_1" data-row="0" data-fmt="lots">—</span> if 1 lot = $1 per point, or <span class="dash-skeleton" data-source="example_size" data-field="lots_25_at_10" data-row="0" data-fmt="lots">—</span> if 1 lot = $10 per point. In MT5, right-click NAS100 → Specification to see the contract size before your first trade.</p>
+    <div class="kz-tablebox">
+      <table class="kz-table" id="bb-table" data-source="blueberry_10k" data-row-key="scenario">
+        <thead><tr>
+          <th data-field="scenario">Scenario</th>
+          <th data-field="risk_usd" class="num">$ per trade</th>
+          <th data-field="reached" class="num">Reached it</th>
+          <th data-field="lost_trailing_dd" class="num">Lost to drawdown</th>
+          <th data-field="lost_trade_cap" class="num">Lost to 1.5% cap</th>
+          <th data-field="median_days" class="num">Typical days</th>
+          <th data-field="p75_days" class="num">75% within (days)</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <h3 class="kz-sub-title">Checkout add-ons at 0.25% risk</h3>
+    <div class="kz-tablebox">
+      <table class="kz-table" id="bb-addons" data-source="blueberry_addons" data-row-key="addon">
+        <thead><tr>
+          <th data-field="addon">Add-on</th>
+          <th data-field="cost">Cost</th>
+          <th data-field="first_payout_median_days" class="num">First $100 (days)</th>
+          <th data-field="fee_back_median_days" class="num">Fee back (days)</th>
+          <th data-field="verdict">Verdict</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="kz-card" id="equity">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">Account balance</h2>
+      <p class="kz-card-note">Balance after each trade, by trade date. The muted line is the same rules with zero spread.</p>
+    </div>
+    <div data-source="equity" class="kz-equity-body">
+      <div class="kz-legend" id="equity-legend"></div>
+      <div class="kz-chart kz-chart-eq dash-skeleton" id="equity-chart"></div>
+      <div class="kz-sublabel">Drawdown from the peak balance</div>
+      <div class="kz-chart kz-chart-dd dash-skeleton" id="dd-chart"></div>
+    </div>
+  </section>
+
+  <div class="kz-grid">
+    <section class="kz-card" id="stats">
+      <div class="kz-card-head">
+        <h2 class="kz-card-title">Trade stats</h2>
+        <p class="kz-card-note">1R is the distance from entry to stop.</p>
+      </div>
+      <dl class="kz-stats">
+        <div><dt>Average win</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_win_r" data-row="0" data-fmt="r">—</dd></div>
+        <div><dt>Average loss</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_loss_r" data-row="0" data-fmt="r">—</dd></div>
+        <div><dt>Largest win</dt><dd class="dash-skeleton" data-source="summary" data-field="largest_win_r" data-row="0" data-fmt="r">—</dd></div>
+        <div><dt>Largest loss</dt><dd class="dash-skeleton" data-source="summary" data-field="largest_loss_r" data-row="0" data-fmt="r">—</dd></div>
+        <div><dt>Longest winning streak</dt><dd class="dash-skeleton" data-source="summary" data-field="max_win_streak" data-row="0" data-fmt="trades">—</dd></div>
+        <div><dt>Longest losing streak</dt><dd class="dash-skeleton" data-source="summary" data-field="max_loss_streak" data-row="0" data-fmt="trades">—</dd></div>
+        <div><dt>Average hold, wins</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_hold_win_h" data-row="0" data-fmt="hours">—</dd></div>
+        <div><dt>Average hold, losses</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_hold_loss_h" data-row="0" data-fmt="hours">—</dd></div>
+        <div><dt>Average stop size</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_risk_points" data-row="0" data-fmt="pts">—</dd></div>
+        <div><dt>Average spread at entry</dt><dd class="dash-skeleton" data-source="summary" data-field="avg_spread_points" data-row="0" data-fmt="pts">—</dd></div>
+        <div><dt>Targets hit</dt><dd class="dash-skeleton" data-source="summary" data-field="targets" data-row="0" data-fmt="int">—</dd></div>
+        <div><dt>Stops hit by a gap</dt><dd class="dash-skeleton" data-source="summary" data-field="gap_stops" data-row="0" data-fmt="int">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="kz-card" id="sides">
+      <div class="kz-card-head">
+        <h2 class="kz-card-title">Long vs short</h2>
+        <p class="kz-card-note">Breaks above the range high are longs; breaks below the low are shorts.</p>
+      </div>
+      <div class="kz-tablebox">
+        <table class="kz-table" id="sides-table" data-source="by_side" data-row-key="side">
+          <thead><tr>
+            <th data-field="side">Side</th>
+            <th data-field="trades" class="num">Trades</th>
+            <th data-field="win_rate" class="num">Win rate</th>
+            <th data-field="r" class="num">Total R</th>
+            <th data-field="avg_r" class="num">Avg R</th>
+            <th data-field="pnl" class="num">P&amp;L</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="kz-card" id="calendar">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">Monthly results</h2>
+      <p class="kz-card-note">R per month by New York trade date, with the year total on the right. Hover a month for its trades and win rate.</p>
+    </div>
+    <div class="kz-cal-wrap dash-skeleton" id="cal-grid" data-source="monthly by_year"></div>
+  </section>
+
+  <div class="kz-grid">
+    <section class="kz-card" id="weekday">
+      <div class="kz-card-head">
+        <h2 class="kz-card-title">By weekday</h2>
+        <p class="kz-card-note">Total R by the New York day the range formed.</p>
+      </div>
+      <div class="kz-chart kz-chart-bars dash-skeleton" id="weekday-chart" data-source="by_weekday"></div>
+    </section>
+    <section class="kz-card" id="timing">
+      <div class="kz-card-head">
+        <h2 class="kz-card-title">By entry timing</h2>
+        <p class="kz-card-note">Total R by how long after the range closed the entry filled.</p>
+      </div>
+      <div class="kz-chart kz-chart-bars dash-skeleton" id="timing-chart" data-source="by_timing"></div>
+    </section>
+  </div>
+
+  <section class="kz-card" id="log">
+    <div class="kz-card-head">
+      <h2 class="kz-card-title">Trade log</h2>
+      <p class="kz-card-note">Every trade. Times are IST. Click a column header to sort.</p>
+    </div>
+    <div class="kz-controls">
+      <input class="kz-input kz-search" id="log-search" type="search" placeholder="Search date, side or exit" aria-label="Search trades">
+      <select class="kz-input" id="log-side" aria-label="Side">
+        <option value="">Long and short</option>
+        <option value="Long">Long only</option>
+        <option value="Short">Short only</option>
+      </select>
+      <select class="kz-input" id="log-result" aria-label="Result">
+        <option value="">Wins and losses</option>
+        <option value="Win">Wins only</option>
+        <option value="Loss">Losses only</option>
+      </select>
+      <span class="kz-count" id="log-count"></span>
+    </div>
+    <div class="kz-scroll">
+      <table class="kz-table" id="log-table" data-source="trades" data-row-key="trade">
+        <thead><tr>
+          <th data-field="trade" class="num"><button class="kz-sort" type="button" data-key="trade">#</button></th>
+          <th data-field="date"><button class="kz-sort" type="button" data-key="date">Date (NY)</button></th>
+          <th data-field="side"><button class="kz-sort" type="button" data-key="side">Side</button></th>
+          <th data-field="entry_time_ist"><button class="kz-sort" type="button" data-key="entry_time_ist">Entry time</button></th>
+          <th data-field="entry" class="num"><button class="kz-sort" type="button" data-key="entry">Entry</button></th>
+          <th data-field="stop" class="num"><button class="kz-sort" type="button" data-key="stop">Stop</button></th>
+          <th data-field="target" class="num"><button class="kz-sort" type="button" data-key="target">Target</button></th>
+          <th data-field="exit_time_ist"><button class="kz-sort" type="button" data-key="exit_time_ist">Exit time</button></th>
+          <th data-field="exit_price" class="num"><button class="kz-sort" type="button" data-key="exit_price">Exit</button></th>
+          <th data-field="exit_reason"><button class="kz-sort" type="button" data-key="exit_reason">Exit reason</button></th>
+          <th data-field="r" class="num"><button class="kz-sort" type="button" data-key="r">R</button></th>
+          <th data-field="pnl_usd" class="num"><button class="kz-sort" type="button" data-key="pnl_usd">P&amp;L</button></th>
+          <th data-field="hold_hours" class="num"><button class="kz-sort" type="button" data-key="hold_hours">Hold (h)</button></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="method" class="kz-head">
+    <h2 class="kz-section-title">How the test fills trades</h2>
+    <ul class="kz-method">
+      <li>Signals use bid candles, as a chart shows them. Longs buy at ask and sell at bid; shorts sell at bid and buy back at ask, so every trade pays the spread: Dukascopy's real one, raised to at least Blueberry's 1.26 points.</li>
+      <li>Swap is booked for each 5 PM New York rollover (2:30 AM IST in summer) a trade is held through: −0.0202% of the entry price a night for longs, +0.0026% for shorts, three nights on Friday. That is Blueberry's −$58.50 / +$7.60 per lot at $10 a point and NAS100 near 29,000, applied to every year.</li>
+      <li>The target is 4× the distance from the actual fill to the stop.</li>
+      <li>If a candle opens past the stop or target (a gap), the exit fills at that open. If one candle reaches both, it counts as a stop.</li>
+      <li>One trade per day: the first confirmed break. A day is skipped if a trade is still open or the entry candle closes beyond the stop.</li>
+      <li>The stop is 2× the 14-candle ATR on 5-min candles, measured at entry. The day is still skipped if the entry candle closes beyond the break candle's low (long) or high (short).</li>
+      <li>v3 replaces v2 (same entry, stop beyond the break candle) and v1 (first close outside the range, no confirming candle).</li>
+      <li>No new entries after 4:55 PM New York (2:25 AM IST in summer). The CFD closes at 4:15 PM New York, so in practice entries run until the close.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+  dash.calc('summary', {
+    title: 'Headline stats',
+    description: 'Totals over every trade. P&L is $1,000 per R (1% of $100,000), not compounded.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const START = 100000;
+      const sum = (a) => a.reduce((s, x) => s + x, 0);
+      const avg = (a) => (a.length ? sum(a) / a.length : 0);
+      const won = trades.filter((t) => Number(t.r) > 0);
+      const lost = trades.filter((t) => Number(t.r) <= 0);
+      const wr = won.map((t) => Number(t.r));
+      const lr = lost.map((t) => Number(t.r));
+      const pnl = trades.map((t) => Number(t.pnl_usd));
+      let bal = START, peak = START, dd = 0, ddPct = 0, w = 0, l = 0, maxW = 0, maxL = 0;
+      for (const p of pnl) {
+        bal += p;
+        peak = Math.max(peak, bal);
+        dd = Math.max(dd, peak - bal);
+        ddPct = Math.max(ddPct, (peak - bal) / peak);
+        w = p > 0 ? w + 1 : 0;
+        l = p > 0 ? 0 : l + 1;
+        maxW = Math.max(maxW, w);
+        maxL = Math.max(maxL, l);
+      }
+      return [{
+        first_date: trades[0].date,
+        last_date: trades[trades.length - 1].date,
+        trades: trades.length,
+        longs: trades.filter((t) => t.side === 'Long').length,
+        shorts: trades.filter((t) => t.side === 'Short').length,
+        wins: won.length,
+        losses: lost.length,
+        win_rate: won.length / trades.length,
+        net_pnl: sum(pnl),
+        return_pct: sum(pnl) / START,
+        end_balance: START + sum(pnl),
+        total_r: sum(trades.map((t) => Number(t.r))),
+        expectancy_r: avg(trades.map((t) => Number(t.r))),
+        expectancy_usd: avg(pnl),
+        profit_factor: sum(wr) / -sum(lr),
+        avg_win_r: avg(wr),
+        avg_loss_r: avg(lr),
+        largest_win_r: Math.max(...wr),
+        largest_loss_r: Math.min(...lr),
+        max_dd_usd: -dd,
+        max_dd_pct: -ddPct,
+        max_win_streak: maxW,
+        max_loss_streak: maxL,
+        avg_hold_win_h: avg(won.map((t) => Number(t.hold_hours))),
+        avg_hold_loss_h: avg(lost.map((t) => Number(t.hold_hours))),
+        avg_risk_points: avg(trades.map((t) => Number(t.risk_points))),
+        avg_spread_points: avg(trades.map((t) => Number(t.spread_points))),
+        targets: trades.filter((t) => t.exit_reason.startsWith('Target')).length,
+        gap_stops: trades.filter((t) => t.exit_reason === 'Stop (gap)').length,
+      }];
+    },
+  });
+
+  dash.calc('example_size', {
+    title: 'Example position size',
+    description: 'Lots for the 14 Oct 2026 trade at $1,000 risk (1% of $100,000) and $1 per point per lot, and at $25 risk (Blueberry $10K at 0.25%) for $1 or $10 per point.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const t = trades.find((x) => x.date === '2026-10-14');
+      if (!t) return [];
+      const stop_points = Math.abs(Number(t.entry) - Number(t.stop));
+      return [{
+        date: t.date, risk_usd: 1000, point_value_usd: 1, stop_points, lots: 1000 / stop_points,
+        lots_25_at_1: 25 / stop_points, lots_25_at_10: 25 / (stop_points * 10),
+      }];
+    },
+  });
+
+  dash.calc('bb_income', {
+    title: 'Blueberry $10K monthly income',
+    description: 'Average R per month of v3 trades times $25 risk (0.25% of $10,000) times the 80% split.',
+    inputs: ['monthly'],
+    fn: (monthly) => {
+      const avg_r = monthly.reduce((s, m) => s + m.r, 0) / monthly.length;
+      return [{ months: monthly.length, avg_r_per_month: avg_r, risk_usd: 25, split: 0.8, income_per_month: avg_r * 25 * 0.8 }];
+    },
+  });
+
+  dash.calc('costs', {
+    title: 'Swap totals',
+    description: 'Overnight swap booked on the trades, in R and at $1,000 per R, and the share of trades held through at least one rollover.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const swap = trades.map((t) => Number(t.swap_r) || 0);
+      const total = swap.reduce((s, x) => s + x, 0);
+      return [{ swap_r: total, swap_usd: total * 1000, overnight_share: swap.filter((x) => x !== 0).length / trades.length }];
+    },
+  });
+
+  dash.calc('zero', {
+    title: 'Zero-spread totals',
+    description: 'The same rules filled at bid on both sides with no swap, so no costs are paid.',
+    inputs: ['trades_zero_spread'],
+    fn: (trades_zero_spread) => {
+      const r = trades_zero_spread.map((t) => Number(t.r));
+      const total = r.reduce((s, x) => s + x, 0);
+      return [{
+        trades: r.length,
+        win_rate: r.filter((x) => x > 0).length / r.length,
+        total_r: total,
+        expectancy_r: total / r.length,
+      }];
+    },
+  });
+
+  dash.calc('equity', {
+    title: 'Balance after each trade',
+    description: 'Running balance from $100,000 and drawdown from its peak, with and without spread.',
+    inputs: ['trades', 'trades_zero_spread'],
+    fn: (trades, trades_zero_spread) => {
+      const START = 100000;
+      const curve = (rows, series) => {
+        let bal = START, peak = START;
+        return rows.map((t) => {
+          bal += Number(t.pnl_usd);
+          peak = Math.max(peak, bal);
+          return { series, trade: Number(t.trade), date: t.date, balance: bal, drawdown_pct: (bal - peak) / peak };
+        });
+      };
+      return [...curve(trades, 'With spread'), ...curve(trades_zero_spread, 'Zero spread')];
+    },
+  });
+
+  dash.calc('monthly', {
+    title: 'Results by month',
+    description: 'Trades, win rate, R and P&L per calendar month of the New York trade date.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const by = new Map();
+      for (const t of trades) {
+        const k = t.date.slice(0, 7);
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push(t);
+      }
+      return [...by].map(([month, ts]) => ({
+        month,
+        trades: ts.length,
+        win_rate: ts.filter((t) => Number(t.r) > 0).length / ts.length,
+        r: ts.reduce((s, t) => s + Number(t.r), 0),
+        pnl: ts.reduce((s, t) => s + Number(t.pnl_usd), 0),
+      }));
+    },
+  });
+
+  dash.calc('by_year', {
+    title: 'Results by year',
+    description: 'Trades, win rate, R and P&L per calendar year of the New York trade date.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const by = new Map();
+      for (const t of trades) {
+        const k = t.date.slice(0, 4);
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push(t);
+      }
+      return [...by].map(([year, ts]) => ({
+        year,
+        trades: ts.length,
+        win_rate: ts.filter((t) => Number(t.r) > 0).length / ts.length,
+        r: ts.reduce((s, t) => s + Number(t.r), 0),
+        pnl: ts.reduce((s, t) => s + Number(t.pnl_usd), 0),
+      }));
+    },
+  });
+
+  dash.calc('by_weekday', {
+    title: 'Results by weekday',
+    description: 'Trades, win rate and R by the New York weekday the range formed.',
+    inputs: ['trades'],
+    fn: (trades) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((weekday) => {
+      const ts = trades.filter((t) => t.weekday === weekday);
+      const r = ts.reduce((s, t) => s + Number(t.r), 0);
+      return {
+        weekday,
+        trades: ts.length,
+        win_rate: ts.length ? ts.filter((t) => Number(t.r) > 0).length / ts.length : 0,
+        r,
+        avg_r: ts.length ? r / ts.length : 0,
+      };
+    }),
+  });
+
+  dash.calc('by_timing', {
+    title: 'Results by entry timing',
+    description: 'Trades, win rate and R grouped by minutes from the range close (10:00 New York) to the entry fill.',
+    inputs: ['trades'],
+    fn: (trades) => {
+      const groups = [[15, '≤15 min'], [30, '16–30 min'], [60, '31–60 min'], [120, '1–2 h'], [240, '2–4 h'], [100000, '4 h+']];
+      return groups.map(([max, timing], i) => {
+        const min = i ? groups[i - 1][0] : -1;
+        const ts = trades.filter((t) => Number(t.minutes_after_range) > min && Number(t.minutes_after_range) <= max);
+        const r = ts.reduce((s, t) => s + Number(t.r), 0);
+        return {
+          timing,
+          trades: ts.length,
+          win_rate: ts.length ? ts.filter((t) => Number(t.r) > 0).length / ts.length : 0,
+          r,
+          avg_r: ts.length ? r / ts.length : 0,
+        };
+      });
+    },
+  });
+
+  dash.calc('by_side', {
+    title: 'Results by side',
+    description: 'Trades, win rate, R and P&L for longs and shorts.',
+    inputs: ['trades'],
+    fn: (trades) => ['Long', 'Short'].map((side) => {
+      const ts = trades.filter((t) => t.side === side);
+      const r = ts.reduce((s, t) => s + Number(t.r), 0);
+      return {
+        side,
+        trades: ts.length,
+        win_rate: ts.length ? ts.filter((t) => Number(t.r) > 0).length / ts.length : 0,
+        r,
+        avg_r: ts.length ? r / ts.length : 0,
+        pnl: ts.reduce((s, t) => s + Number(t.pnl_usd), 0),
+      };
+    }),
+  });
+</script>
+
+<script>
+  const START = 100000;
+  const L = d3.formatLocale({ decimal: '.', thousands: ',', grouping: [3], currency: ['$', ''], minus: '-' });
+  const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+  const f = {
+    int: L.format(','),
+    usd: L.format('$,.0f'),
+    usdS: L.format('+$,.0f'),
+    usdS2: L.format('+$,.2f'),
+    pct: L.format('.1%'),
+    pctS: L.format('+.1%'),
+    pct0: L.format('.0%'),
+    f2: L.format('.2f'),
+    price: L.format(',.2f'),
+    r: (v) => L.format('+.2f')(v) + 'R',
+    r1: (v) => L.format('+.1f')(v) + 'R',
+    hours: (v) => L.format('.1f')(v) + ' h',
+    pts: (v) => L.format('.1f')(v) + ' pts',
+    trades: (v) => L.format(',')(v) + ' trades',
+    text: (v) => String(v),
+    lots: (v) => L.format(',.2f')(v) + ' lots',
+    days: (v) => L.format(',.0f')(v) + ' days',
+  };
+  const day = (s) => new Date(s + 'T00:00:00Z');
+  const fmtDay = d3.utcFormat('%b %-d, %Y');
+  const usdAxis = (v) => '$' + compact.format(v);
+  const isFail = (d) => ['error', 'connect', 'declined', 'missing'].includes(d.status);
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  function failed(el) {
+    el.classList.remove('dash-skeleton');
+    const line = document.createElement('div');
+    line.className = 'kz-failed';
+    const dot = document.createElement('span');
+    dot.className = 'kz-dot';
+    const text = document.createElement('span');
+    text.textContent = 'Failed to load';
+    line.append(dot, text);
+    el.replaceChildren(line);
+  }
+
+  function tone(el, v, threshold) {
+    el.classList.toggle('kz-bad', threshold != null && v < threshold);
+    el.classList.toggle('kz-ok', threshold != null && v > threshold);
+  }
+
+  function measure(host, texts, cls = 'kz-tick') {
+    const svg = d3.select(host).append('svg').attr('class', 'kz-measure');
+    const t = svg.append('text').attr('class', cls);
+    let w = 0;
+    for (const s of texts) {
+      t.text(s);
+      w = Math.max(w, t.node().getComputedTextLength());
+    }
+    svg.remove();
+    return w;
+  }
+
+  function makeTip(host) {
+    const el = document.createElement('div');
+    el.className = 'kz-tip';
+    el.hidden = true;
+    host.appendChild(el);
+    return {
+      show(ev, title, lines) {
+        el.replaceChildren();
+        const h = document.createElement('div');
+        h.className = 'kz-tip-title';
+        h.textContent = title;
+        el.appendChild(h);
+        for (const ln of lines) {
+          const row = document.createElement('div');
+          row.className = 'kz-tip-row';
+          if (ln.color) {
+            const sw = document.createElement('span');
+            sw.className = 'kz-sw';
+            sw.style.background = ln.color;
+            row.appendChild(sw);
+          }
+          const name = document.createElement('span');
+          name.className = 'kz-tip-name';
+          name.textContent = ln.name;
+          const val = document.createElement('b');
+          val.textContent = ln.value;
+          row.append(name, val);
+          el.appendChild(row);
+        }
+        el.hidden = false;
+        const box = host.getBoundingClientRect();
+        const px = ev.clientX - box.left + host.scrollLeft;
+        const py = ev.clientY - box.top + host.scrollTop;
+        const w = el.offsetWidth;
+        const h2 = el.offsetHeight;
+        const maxLeft = host.scrollLeft + box.width - w;
+        let left = px + 14;
+        if (left > maxLeft) left = px - 14 - w;
+        left = Math.max(host.scrollLeft, Math.min(left, maxLeft));
+        let top = py - h2 - 10;
+        if (top < 0) top = py + 16;
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+      },
+      hide() {
+        el.hidden = true;
+      },
+    };
+  }
+
+  function pickRow(rows, ds) {
+    if (!ds.where) return rows[Number(ds.row || 0)];
+    const want = [...new URLSearchParams(ds.where)];
+    return rows.find((r) => want.every(([k, v]) => String(r[k]) === v));
+  }
+
+  function fillMarks() {
+    document.querySelectorAll('.kz [data-fmt]').forEach((el) => {
+      const d = dash.data(el.dataset.source);
+      el.classList.toggle('dash-skeleton', d.status === 'loading');
+      const row = d.status === 'ok' ? pickRow(d.data, el.dataset) : null;
+      if (!row) {
+        el.textContent = '—';
+        tone(el, 0, null);
+        return;
+      }
+      const v = row[el.dataset.field];
+      el.textContent = f[el.dataset.fmt](v);
+      tone(el, v, el.dataset.tone != null ? Number(el.dataset.tone) : null);
+    });
+  }
+
+  function drawEquity() {
+    const wrap = document.getElementById('equity-chart');
+    const ddWrap = document.getElementById('dd-chart');
+    const legend = document.getElementById('equity-legend');
+    const d = dash.data('equity');
+    for (const el of [wrap, ddWrap]) {
+      el.replaceChildren();
+      el.classList.toggle('dash-skeleton', d.status === 'loading');
+    }
+    legend.replaceChildren();
+    if (isFail(d)) {
+      failed(wrap);
+      ddWrap.classList.remove('dash-skeleton');
+      return;
+    }
+    if (d.status !== 'ok' || !d.data.length) return;
+
+    const rows = d.data.map((r) => ({ ...r, x: day(r.date) }));
+    const colors = { 'With spread': dash.colors[0], 'Zero spread': 'var(--cds-chart-muted)' };
+    const series = ['With spread', 'Zero spread']
+      .map((name) => ({ name, color: colors[name], pts: rows.filter((r) => r.series === name) }))
+      .filter((s) => s.pts.length);
+    const main = series[0].pts;
+
+    for (const s of series) {
+      const item = document.createElement('span');
+      const sw = document.createElement('i');
+      sw.className = 'kz-sw';
+      sw.style.background = s.color;
+      const label = document.createElement('span');
+      label.textContent = `${s.name}: ${f.usd(s.pts[s.pts.length - 1].balance)}`;
+      item.append(sw, label);
+      legend.appendChild(item);
+    }
+    const ref = document.createElement('span');
+    const refSw = document.createElement('i');
+    refSw.className = 'kz-sw kz-sw-ref';
+    const refLabel = document.createElement('span');
+    refLabel.textContent = 'Start: $100,000';
+    ref.append(refSw, refLabel);
+    legend.appendChild(ref);
+
+    const W = Math.max(300, wrap.clientWidth);
+    const H = 260, mt = 10, mb = 26;
+    const DH = 120, dmb = 24;
+    const y = d3.scaleLinear(d3.extent([...rows.map((r) => r.balance), START]), [H - mb, mt]).nice();
+    const yd = d3.scaleLinear([Math.min(-0.01, d3.min(main, (r) => r.drawdown_pct)), 0], [DH - dmb, 6]).nice();
+    const yT = y.ticks(5);
+    const ydT = yd.ticks(3);
+    const ml = Math.ceil(measure(wrap, [...yT.map(usdAxis), ...ydT.map(f.pct0)])) + 12;
+    const mr = 16;
+    const x = d3.scaleUtc(d3.extent(rows, (r) => r.x), [ml, W - mr]);
+    const xT = x.ticks(d3.utcMonth.every(W < 560 ? 12 : 6)).filter((t) => x(t) > ml + 16 && x(t) < W - mr - 16);
+    const xFmt = (t) => (t.getUTCMonth() === 0 ? d3.utcFormat('%Y')(t) : d3.utcFormat('%b')(t));
+
+    const svg = d3.select(wrap).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'Account balance after each trade');
+    svg.append('g').selectAll('line').data(yT).join('line')
+      .attr('x1', ml).attr('x2', W - mr).attr('y1', (v) => y(v)).attr('y2', (v) => y(v))
+      .style('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(yT).join('text').attr('class', 'kz-tick')
+      .attr('x', ml - 8).attr('y', (v) => y(v)).attr('dy', '0.32em').attr('text-anchor', 'end').text(usdAxis);
+    svg.append('line').attr('x1', ml).attr('x2', W - mr).attr('y1', H - mb).attr('y2', H - mb).style('stroke', 'var(--cds-chart-axis)');
+    svg.append('g').selectAll('text').data(xT).join('text').attr('class', 'kz-tick')
+      .attr('x', (t) => x(t)).attr('y', H - mb + 17).attr('text-anchor', 'middle').text(xFmt);
+    svg.append('line').attr('x1', ml).attr('x2', W - mr).attr('y1', y(START)).attr('y2', y(START))
+      .style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 4');
+    const line = d3.line().x((r) => x(r.x)).y((r) => y(r.balance));
+    for (const s of [...series].reverse()) {
+      svg.append('path').datum(s.pts).attr('d', line).style('fill', 'none').style('stroke', s.color)
+        .attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
+    }
+
+    const rule = svg.append('line').attr('y1', mt).attr('y2', H - mb).style('stroke', 'var(--cds-chart-axis)').style('display', 'none');
+    const dots = series.map((s) => svg.append('circle').attr('r', 4).style('fill', s.color).style('display', 'none'));
+    const tip = makeTip(wrap);
+    const near = d3.bisector((r) => r.x).center;
+    svg.append('rect').attr('x', ml).attr('y', mt).attr('width', W - mr - ml).attr('height', H - mb - mt)
+      .style('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [mx] = d3.pointer(ev);
+        const at = x.invert(mx);
+        const hits = series.map((s) => s.pts[near(s.pts, at)]);
+        rule.style('display', null).attr('x1', x(hits[0].x)).attr('x2', x(hits[0].x));
+        dots.forEach((dot, i) => dot.style('display', null).attr('cx', x(hits[i].x)).attr('cy', y(hits[i].balance)));
+        tip.show(ev, fmtDay(hits[0].x), series.map((s, i) => ({ color: s.color, name: s.name, value: f.usd(hits[i].balance) })));
+      })
+      .on('pointerleave', () => {
+        tip.hide();
+        rule.style('display', 'none');
+        dots.forEach((dot) => dot.style('display', 'none'));
+      });
+
+    const dsvg = d3.select(ddWrap).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${DH}`)
+      .attr('role', 'img').attr('aria-label', 'Drawdown from the peak balance');
+    dsvg.append('g').selectAll('line').data(ydT).join('line')
+      .attr('x1', ml).attr('x2', W - mr).attr('y1', (v) => yd(v)).attr('y2', (v) => yd(v))
+      .style('stroke', 'var(--cds-chart-grid)');
+    dsvg.append('g').selectAll('text').data(ydT).join('text').attr('class', 'kz-tick')
+      .attr('x', ml - 8).attr('y', (v) => yd(v)).attr('dy', '0.32em').attr('text-anchor', 'end').text(f.pct0);
+    dsvg.append('path').datum(main)
+      .attr('d', d3.area().x((r) => x(r.x)).y0(yd(0)).y1((r) => yd(r.drawdown_pct)))
+      .style('fill', 'color-mix(in srgb, var(--cds-chart-status-critical) 22%, transparent)');
+    dsvg.append('path').datum(main)
+      .attr('d', d3.line().x((r) => x(r.x)).y((r) => yd(r.drawdown_pct)))
+      .style('fill', 'none').style('stroke', 'var(--cds-chart-status-critical)').attr('stroke-width', 1.5).attr('stroke-linejoin', 'round');
+    dsvg.append('g').selectAll('text').data(xT).join('text').attr('class', 'kz-tick')
+      .attr('x', (t) => x(t)).attr('y', DH - dmb + 17).attr('text-anchor', 'middle').text(xFmt);
+  }
+
+  function drawCalendar() {
+    const box = document.getElementById('cal-grid');
+    const m = dash.data('monthly');
+    const yr = dash.data('by_year');
+    box.replaceChildren();
+    box.classList.toggle('dash-skeleton', [m, yr].some((d) => d.status === 'loading'));
+    if ([m, yr].some(isFail)) {
+      failed(box);
+      return;
+    }
+    if (m.status !== 'ok' || yr.status !== 'ok') return;
+
+    const byMonth = new Map(m.data.map((r) => [r.month, r]));
+    const maxAbs = d3.max(m.data, (r) => Math.abs(r.r)) || 1;
+    const tip = makeTip(box);
+    const grid = document.createElement('div');
+    grid.className = 'kz-cal';
+    const add = (cls, text) => {
+      const c = document.createElement('div');
+      c.className = cls;
+      c.textContent = text;
+      grid.appendChild(c);
+      return c;
+    };
+    const cell = (r, label, total) => {
+      const c = add('kz-cal-c' + (total ? ' kz-cal-t' : ''), r ? L.format('+.1f')(r.r) : '');
+      if (!r) return;
+      const share = Math.min(1, Math.abs(r.r) / maxAbs);
+      const hue = r.r >= 0 ? 'var(--color-ok)' : 'var(--color-bad)';
+      c.style.background = `color-mix(in srgb, ${hue} ${Math.round(10 + 45 * share)}%, transparent)`;
+      c.addEventListener('pointermove', (ev) => tip.show(ev, label, [
+        { name: 'Trades', value: f.int(r.trades) },
+        { name: 'Win rate', value: f.pct(r.win_rate) },
+        { name: 'Result', value: f.r1(r.r) },
+        { name: 'P&L', value: f.usdS(r.pnl) },
+      ]));
+      c.addEventListener('pointerleave', () => tip.hide());
+    };
+    add('kz-cal-h', '');
+    MONTHS.forEach((name) => add('kz-cal-h', name));
+    add('kz-cal-h', 'Year');
+    for (const y of [...yr.data].sort((a, b) => String(a.year).localeCompare(String(b.year)))) {
+      add('kz-cal-y', y.year);
+      MONTHS.forEach((name, i) => cell(byMonth.get(`${y.year}-${String(i + 1).padStart(2, '0')}`), `${name} ${y.year}`));
+      cell(y, `${y.year} total`, true);
+    }
+    box.prepend(grid);
+  }
+
+  function drawBars(boxId, id, key) {
+    const box = document.getElementById(boxId);
+    const d = dash.data(id);
+    box.replaceChildren();
+    box.classList.toggle('dash-skeleton', d.status === 'loading');
+    if (isFail(d)) {
+      failed(box);
+      return;
+    }
+    if (d.status !== 'ok' || !d.data.length) return;
+
+    const rows = d.data;
+    const W = Math.max(260, box.clientWidth);
+    const H = 220, mt = 8, mb = 42;
+    const lo = Math.min(0, d3.min(rows, (r) => r.r));
+    const hi = Math.max(0, d3.max(rows, (r) => r.r));
+    const pad = (hi - lo) * 0.18 || 1;
+    const y = d3.scaleLinear([lo < 0 ? lo - pad : 0, hi > 0 ? hi + pad : 0], [H - mb, mt]).nice();
+    const yT = y.ticks(4);
+    const ml = Math.ceil(measure(box, yT.map(f.r1))) + 12;
+    const x = d3.scaleBand(rows.map((r) => r[key]), [ml, W - 8]).padding(0.3);
+    const bw = Math.min(32, x.bandwidth());
+    const off = (x.bandwidth() - bw) / 2;
+    const cx = (r) => x(r[key]) + x.bandwidth() / 2;
+    const fit = measure(box, rows.map((r) => r[key])) <= x.step() - 6;
+    const label = (r) => (fit ? r[key] : r[key].replace(' min', 'm').replace(' h', 'h'));
+    const showCount = measure(box, rows.map((r) => `${f.int(r.trades)} trades`)) <= x.step() - 6;
+
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'Total R by group');
+    svg.append('g').selectAll('line').data(yT).join('line')
+      .attr('x1', ml).attr('x2', W - 8).attr('y1', (v) => y(v)).attr('y2', (v) => y(v))
+      .style('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data(yT).join('text').attr('class', 'kz-tick')
+      .attr('x', ml - 8).attr('y', (v) => y(v)).attr('dy', '0.32em').attr('text-anchor', 'end').text(f.r1);
+    const tip = makeTip(box);
+    svg.append('g').selectAll('rect').data(rows).join('rect')
+      .attr('x', (r) => x(r[key]) + off).attr('width', bw)
+      .attr('y', (r) => y(Math.max(0, r.r))).attr('height', (r) => Math.max(1, Math.abs(y(r.r) - y(0))))
+      .attr('rx', 4)
+      .style('fill', (r) => `color-mix(in srgb, ${r.r >= 0 ? 'var(--color-ok)' : 'var(--color-bad)'} 80%, transparent)`)
+      .on('pointermove', (ev, r) => tip.show(ev, r[key], [
+        { name: 'Trades', value: f.int(r.trades) },
+        { name: 'Win rate', value: f.pct(r.win_rate) },
+        { name: 'Total', value: f.r1(r.r) },
+        { name: 'Per trade', value: f.r(r.avg_r) },
+      ]))
+      .on('pointerleave', () => tip.hide());
+    svg.append('line').attr('x1', ml).attr('x2', W - 8).attr('y1', y(0)).attr('y2', y(0)).style('stroke', 'var(--cds-chart-axis)');
+    svg.append('g').selectAll('text').data(rows).join('text').attr('class', 'kz-val')
+      .attr('x', cx).attr('y', (r) => (r.r >= 0 ? y(r.r) - 6 : y(r.r) + 14)).attr('text-anchor', 'middle')
+      .text((r) => f.r1(r.r));
+    svg.append('g').selectAll('text').data(rows).join('text').attr('class', 'kz-tick')
+      .attr('x', cx).attr('y', H - mb + 17).attr('text-anchor', 'middle').text(label);
+    if (showCount) {
+      svg.append('g').selectAll('text').data(rows).join('text').attr('class', 'kz-tick')
+        .attr('x', cx).attr('y', H - mb + 32).attr('text-anchor', 'middle').text((r) => `${f.int(r.trades)} trades`);
+    }
+  }
+
+  function drawSides() {
+    const tbody = document.querySelector('#sides-table tbody');
+    const d = dash.data('by_side');
+    tbody.replaceChildren();
+    if (isFail(d) || d.status !== 'ok') {
+      const tr = tbody.insertRow();
+      const td = tr.insertCell();
+      td.colSpan = 6;
+      if (isFail(d)) failed(td);
+      else td.className = d.status === 'loading' ? 'dash-skeleton' : '';
+      return;
+    }
+    for (const r of d.data) {
+      const tr = tbody.insertRow();
+      const cells = [
+        [r.side, null, ''],
+        [f.int(r.trades), null, 'num'],
+        [f.pct(r.win_rate), r.win_rate - 0.2, 'num'],
+        [f.r1(r.r), r.r, 'num'],
+        [f.r(r.avg_r), r.avg_r, 'num'],
+        [f.usdS(r.pnl), r.pnl, 'num'],
+      ];
+      for (const [text, sign, cls] of cells) {
+        const td = tr.insertCell();
+        td.textContent = text;
+        td.className = cls;
+        if (sign != null) tone(td, sign, 0);
+      }
+    }
+  }
+
+  const NUMERIC = new Set(['trade', 'entry', 'stop', 'target', 'exit_price', 'r', 'pnl_usd', 'hold_hours']);
+  const COLS = [
+    ['trade', (v) => v], ['date', (v) => v], ['side', (v) => v], ['entry_time_ist', (v) => v],
+    ['entry', (v) => f.price(Number(v))], ['stop', (v) => f.price(Number(v))], ['target', (v) => f.price(Number(v))],
+    ['exit_time_ist', (v) => v], ['exit_price', (v) => f.price(Number(v))], ['exit_reason', (v) => v],
+    ['r', (v) => L.format('+.2f')(Number(v))], ['pnl_usd', (v) => f.usdS(Number(v))], ['hold_hours', (v) => L.format('.2f')(Number(v))],
+  ];
+  const sortState = { key: 'trade', dir: 1 };
+  const search = document.getElementById('log-search');
+  const sideSel = document.getElementById('log-side');
+  const resultSel = document.getElementById('log-result');
+
+  function drawLog() {
+    const tbody = document.querySelector('#log-table tbody');
+    const count = document.getElementById('log-count');
+    const d = dash.data('trades');
+    tbody.replaceChildren();
+    document.querySelectorAll('#log-table th').forEach((th) => {
+      const k = th.querySelector('button').dataset.key;
+      th.setAttribute('aria-sort', k === sortState.key ? (sortState.dir > 0 ? 'ascending' : 'descending') : 'none');
+    });
+    if (isFail(d) || d.status !== 'ok') {
+      count.textContent = '';
+      const tr = tbody.insertRow();
+      const td = tr.insertCell();
+      td.colSpan = COLS.length;
+      if (isFail(d)) failed(td);
+      else td.className = d.status === 'loading' ? 'dash-skeleton' : '';
+      return;
+    }
+    const q = search.value.trim().toLowerCase();
+    const side = sideSel.value;
+    const result = resultSel.value;
+    const rows = d.data.filter((t) =>
+      (!side || t.side === side) &&
+      (!result || t.result === result) &&
+      (!q || [t.date, t.side, t.exit_reason, t.entry_time_ist, t.weekday].join(' ').toLowerCase().includes(q)));
+    const { key, dir } = sortState;
+    rows.sort((a, b) => {
+      const av = NUMERIC.has(key) ? Number(a[key]) : String(a[key]);
+      const bv = NUMERIC.has(key) ? Number(b[key]) : String(b[key]);
+      return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+    });
+    const frag = document.createDocumentFragment();
+    for (const t of rows) {
+      const tr = document.createElement('tr');
+      for (const [col, fmt] of COLS) {
+        const td = document.createElement('td');
+        td.textContent = fmt(t[col]);
+        if (NUMERIC.has(col)) td.className = 'num';
+        if (col === 'r' || col === 'pnl_usd') tone(td, Number(t[col]), 0);
+        tr.appendChild(td);
+      }
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+    count.textContent = `Showing ${f.int(rows.length)} of ${f.int(d.data.length)} trades`;
+  }
+
+  document.querySelectorAll('#log-table .kz-sort').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.key;
+      sortState.dir = sortState.key === k ? -sortState.dir : 1;
+      sortState.key = k;
+      drawLog();
+    });
+  });
+  search.addEventListener('input', drawLog);
+  sideSel.addEventListener('change', drawLog);
+  resultSel.addEventListener('change', drawLog);
+
+  function drawProp() {
+    const tbody = document.querySelector('#prop-table tbody');
+    const d = dash.data('prop_pass_rates');
+    tbody.replaceChildren();
+    if (isFail(d) || d.status !== 'ok') {
+      const td = tbody.insertRow().insertCell();
+      td.colSpan = 8;
+      if (isFail(d)) failed(td);
+      else td.className = d.status === 'loading' ? 'dash-skeleton' : '';
+      return;
+    }
+    const pct = (v) => f.pct(Number(v));
+    for (const r of [...d.data].sort((a, b) => Number(a.risk_pct) - Number(b.risk_pct))) {
+      const tr = tbody.insertRow();
+      tr.dataset.key = r.risk_pct;
+      if (Number(r.risk_pct) === 1) tr.className = 'kz-row-hi';
+      tr.insertCell().textContent = L.format('.2~f')(Number(r.risk_pct)) + '%' + (Number(r.risk_pct) === 1 ? ' (yours)' : '');
+      const passCell = tr.insertCell();
+      passCell.className = 'num';
+      const wrap = document.createElement('span');
+      wrap.className = 'kz-barcell';
+      const track = document.createElement('span');
+      track.className = 'kz-bartrack';
+      const bar = document.createElement('span');
+      bar.className = 'kz-bar';
+      bar.style.width = Math.round(Number(r.pass_rate) * 100) + '%';
+      track.appendChild(bar);
+      const label = document.createElement('span');
+      label.textContent = pct(r.pass_rate);
+      wrap.append(track, label);
+      passCell.appendChild(wrap);
+      for (const [col, fmt] of [
+        ['fail_phase1', pct], ['fail_phase2', pct], ['pass_rate_2018_22', pct], ['pass_rate_2023_26', pct],
+        ['median_days_to_pass', (v) => f.int(Number(v))], ['p75_days_to_pass', (v) => f.int(Number(v))],
+      ]) {
+        const td = tr.insertCell();
+        td.className = 'num';
+        td.textContent = fmt(r[col]);
+      }
+    }
+  }
+
+  function drawTable(tableId, id, key, cols) {
+    const tbody = document.querySelector(`#${tableId} tbody`);
+    const d = dash.data(id);
+    tbody.replaceChildren();
+    if (isFail(d) || d.status !== 'ok') {
+      const td = tbody.insertRow().insertCell();
+      td.colSpan = cols.length;
+      if (isFail(d)) failed(td);
+      else td.className = d.status === 'loading' ? 'dash-skeleton' : '';
+      return;
+    }
+    for (const r of d.data) {
+      const tr = tbody.insertRow();
+      tr.dataset.key = r[key];
+      for (const [col, fmt, num] of cols) {
+        const td = tr.insertCell();
+        td.textContent = fmt(r[col]);
+        if (num) td.className = 'num';
+      }
+    }
+  }
+
+  function drawBlueberry() {
+    const pct = (v) => f.pct(Number(v));
+    const days = (v) => f.int(Number(v));
+    drawTable('bb-table', 'blueberry_10k', 'scenario', [
+      ['scenario', String], ['risk_usd', (v) => f.usd(Number(v)), true], ['reached', pct, true],
+      ['lost_trailing_dd', pct, true], ['lost_trade_cap', pct, true], ['median_days', days, true], ['p75_days', days, true],
+    ]);
+    drawTable('bb-addons', 'blueberry_addons', 'addon', [
+      ['addon', String], ['cost', String], ['first_payout_median_days', days, true], ['fee_back_median_days', days, true], ['verdict', String],
+    ]);
+  }
+
+  const go = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    dash.setLink(id);
+  };
+  document.querySelectorAll('.kz-navbtn').forEach((btn) => btn.addEventListener('click', () => go(btn.dataset.go)));
+  let linked = false;
+
+  dash.onData(() => {
+    fillMarks();
+    drawProp();
+    drawBlueberry();
+    drawEquity();
+    drawSides();
+    drawCalendar();
+    drawBars('weekday-chart', 'by_weekday', 'weekday');
+    drawBars('timing-chart', 'by_timing', 'timing');
+    drawLog();
+    if (!linked && location.hash) {
+      linked = true;
+      go(location.hash.slice(1));
+    }
+  });
+</script>

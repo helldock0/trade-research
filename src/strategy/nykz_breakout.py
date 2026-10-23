@@ -1,0 +1,590 @@
+"""NY kill-zone breakout — NAS100 M5 with real bid/ask fills.
+
+Rules (session times are New York local, so US DST is handled):
+- Range = bid high/low of bars opening in [range_start, range_end); when
+  range_start >= range_end the range starts on the previous NY day (e.g. an
+  Asian range 20:00-00:00). Breaks are looked for from entry_start (default
+  range_end). NY
+  weekdays listed in skip_weekdays ("Mon".."Fri") are not traded, nor NY
+  days with a news_calendar event listed in skip_news_events (with
+  only_news_days, only those days are traded). Volatility filters skip days
+  whose prior-day ATR(14)/price (min_daily_atr_pctile) or kill-zone range
+  width (min_range_pctile) ranks below that share of the previous
+  vol_lookback_days. No day before trade_from is traded (earlier bars only
+  warm the filters up).
+- The first later bar whose bid close is above the range high (long) or below
+  the range low (short) is the break bar. One attempt per NY day.
+  break_mode "fresh" only counts a break whose previous bar closed inside
+  the range; "sweep_reversal" trades the other way when a bar that traded
+  (or whose previous bar closed) beyond a side closes back inside the range,
+  and confirm_close then needs the next bar to stay back inside.
+  Optional "clean break" filters: the close must clear the level by
+  min_break_points / min_break_pct of price, and the body must be at least
+  min_body_vs_range x the average range-bar body. With confirm_close, the
+  next bar must also close outside the range, else the scan waits for the
+  next break.
+- Entry at the close of the next bar: longs buy the ask, shorts sell the bid.
+  That bar must close no later than entry_cutoff. With entry_mode
+  "fvg_retest", the entry waits instead for the first fair value gap in the
+  break direction (3 bars, the middle one at or after the break bar): price
+  must trade back into the gap and then close back out of it on the trade
+  side; a close through the far side of the gap cancels the day. With
+  "fvg_limit", a limit order rests in that gap from the bar after it forms,
+  fvg_limit_level of the way from its near edge (0) to its far side (1); a
+  bar opening past it fills at the open, and if the fill bar also reaches the
+  stop the trade counts as stopped.
+- Stop = break bar low - buffer (long) / high + buffer (short); with
+  stop_includes_prior_bar, the bar before the break counts too; with
+  stop_ref "fvg" (FVG entries only), the gap's first bar is used. The day is
+  skipped when the entry bar's bid close is at or beyond the stop.
+  atr_stop_mult replaces that stop with entry -/+ mult x ATR (M5, at entry);
+  min_stop_atr only widens a stop closer than that many ATRs.
+- Target = entry +/- take_profit_r * |entry - stop|, measured from the fill;
+  take_profit_r 0 means no target.
+- Optional moving stop, updated after each bar closes: breakeven_at_r moves
+  it to entry once the best price reaches that many R; trail_atr_mult trails
+  it that many ATRs behind the best price once trail_start_r is reached.
+- Held until stop or target (overnight and over weekends). One trade at a
+  time: a day that breaks while a trade is still open is skipped.
+- Long exits trigger and fill on bid, short exits on ask. A bar that opens
+  past a level fills at its open (gap); the stop wins when one bar spans both.
+- Broker costs (optional): run() widens the ask to at least
+  min_spread_points above the bid. swap_long_pct / swap_short_pct (% of the
+  entry price, negative = paid) are booked for each 17:00 New York rollover a
+  trade is held through, three times on swap_triple_day.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from src.config import ROOT
+from src.data.bars import ensure_utc_index
+from src.features.sessions import parse_hhmm
+
+OHLC = ["open", "high", "low", "close"]
+BAR_MINUTES = 5
+BAR = pd.Timedelta(minutes=BAR_MINUTES)
+
+
+@dataclass
+class Setup:
+    day: str  # NY date
+    side: int  # +1 long / -1 short
+    range_high: float
+    range_low: float
+    break_time: pd.Timestamp  # break bar open (UTC)
+    entry_time: pd.Timestamp  # entry bar close (UTC); a limit fills inside that bar
+    entry_pos: int  # row of the entry bar in the bid/ask frame
+    entry: float
+    stop: float
+    take_profit: float | None
+    risk_points: float
+    spread_points: float
+    atr_points: float
+    intrabar_fill: bool = False  # limit fill: the entry bar itself can hit the stop
+
+
+@dataclass
+class KZTrade:
+    day: str
+    side: int
+    range_high: float
+    range_low: float
+    break_time: pd.Timestamp
+    entry_time: pd.Timestamp
+    entry: float
+    stop: float  # initial stop
+    take_profit: float | None
+    risk_points: float
+    spread_points: float
+    atr_points: float
+    exit_time: pd.Timestamp  # open of the bar the exit happened in (UTC)
+    exit_price: float
+    exit_reason: str
+    r_multiple: float
+    mae_r: float = 0.0  # worst open loss while held, in R (capped at the stop unless it gapped)
+    mfe_r: float = 0.0  # best open profit while held, in R (the exit itself for a target)
+
+
+def merge_bid_ask(bid: pd.DataFrame, ask: pd.DataFrame) -> pd.DataFrame:
+    """Bid OHLC as open/high/low/close plus ask_open/... on shared timestamps."""
+    b = ensure_utc_index(bid)[OHLC]
+    a = ensure_utc_index(ask)[OHLC].add_prefix("ask_")
+    return b.join(a, how="inner")
+
+
+def without_spread(bars: pd.DataFrame) -> pd.DataFrame:
+    """Copy with ask == bid, for a zero-cost baseline."""
+    out = bars.copy()
+    for c in OHLC:
+        out[f"ask_{c}"] = out[c]
+    return out
+
+
+def with_min_spread(bars: pd.DataFrame, points: float) -> pd.DataFrame:
+    """Copy with the ask at least `points` above the bid (a broker's typical spread)."""
+    out = bars.copy()
+    for c in OHLC:
+        out[f"ask_{c}"] = np.maximum(out[f"ask_{c}"], out[c] + points)
+    return out
+
+
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+
+def _rollovers(entry_time: pd.Timestamp, exit_time: pd.Timestamp, triple_day: str = "Fri") -> int:
+    """Swap nights for a trade open from entry_time to the bar opening at exit_time.
+
+    One per weekday 17:00 New York rollover in (entry_time, exit_time], three
+    on triple_day.
+    """
+    a, b = entry_time.tz_convert("America/New_York"), exit_time.tz_convert("America/New_York")
+    n, roll = 0, a.normalize() + pd.Timedelta(hours=17)
+    if roll <= a:
+        roll += pd.Timedelta(days=1)
+    while roll <= b:
+        day = roll.strftime("%a")
+        if day in WEEKDAYS:
+            n += 3 if day == triple_day else 1
+        roll = (roll + pd.Timedelta(days=1)).normalize() + pd.Timedelta(hours=17)  # DST-safe
+    return n
+
+
+def _minutes(hhmm: str) -> int:
+    t = parse_hhmm(hhmm)
+    return t.hour * 60 + t.minute
+
+
+def _atr(h: np.ndarray, l: np.ndarray, c: np.ndarray, period: int) -> np.ndarray:
+    prev = np.concatenate([[c[0]], c[:-1]])
+    tr = np.maximum(h - l, np.maximum(np.abs(h - prev), np.abs(l - prev)))
+    return pd.Series(tr).rolling(period, min_periods=1).mean().to_numpy()
+
+
+def _news_days(sig: dict[str, Any], tz: str) -> set[str] | None:
+    """NY dates (YYYY-MM-DD) with a skip_news_events event, or None when off."""
+    events = set(sig.get("skip_news_events", []))
+    if not events:
+        return None
+    path = Path(sig["news_calendar"])
+    cal = pd.read_csv(path if path.is_absolute() else ROOT / path)
+    cal = cal[cal["event"].isin(events)]
+    return set(pd.to_datetime(cal["timestamp"], utc=True).dt.tz_convert(tz).dt.strftime("%Y-%m-%d"))
+
+
+def _rank(past: np.ndarray, x: float) -> float:
+    """Share of `past` below x, ties counting half."""
+    return float(np.mean(past < x) + 0.5 * np.mean(past == x))
+
+
+def _pctile_vs_past(values: pd.Series, lookback: int) -> pd.Series:
+    """Rank of each value among the previous `lookback` values (NaN until 20 exist)."""
+    return values.rolling(lookback + 1, min_periods=21).apply(lambda w: _rank(w[:-1], w[-1]), raw=True)
+
+
+def _daily_atr_rank(bars: pd.DataFrame, local: pd.DatetimeIndex, lookback: int) -> dict[Any, float]:
+    """NY date -> rank of the previous day's ATR(14)/close among the past `lookback` days."""
+    weekday = local.dayofweek < 5
+    d = bars.loc[weekday, ["high", "low", "close"]].groupby(local.date[weekday]).agg(
+        {"high": "max", "low": "min", "close": "last"}
+    )
+    prev_c = d["close"].shift(1)
+    tr = pd.concat([d["high"] - d["low"], (d["high"] - prev_c).abs(), (d["low"] - prev_c).abs()], axis=1).max(axis=1)
+    atr_pct = (tr.rolling(14).mean() / d["close"]).shift(1)
+    return _pctile_vs_past(atr_pct, lookback).to_dict()
+
+
+def _sweep_side(h: float, l: float, c: float, prev_c: float, rh: float, rl: float) -> int:
+    """-1 when price ran above the range and closed back inside, +1 for the low."""
+    if not rl <= c <= rh:
+        return 0
+    above = h > rh or prev_c > rh
+    below = l < rl or prev_c < rl
+    if above == below:
+        return 0
+    return -1 if above else 1
+
+
+def _break_side(o: float, c: float, rh: float, rl: float, need: float, body_floor: float) -> int:
+    """+1 / -1 when a bar closes cleanly above / below the range, else 0."""
+    if abs(c - o) < body_floor:
+        return 0
+    if c > rh + need:
+        return 1
+    if c < rl - need:
+        return -1
+    return 0
+
+
+def _first_fvg(
+    side: int, start: int, last: int, hi: np.ndarray, lo: np.ndarray
+) -> tuple[int, int, float, float] | None:
+    """(first bar, third bar, near edge, far edge) of the first fair value gap
+    in the trade direction whose middle bar is at or after `start`."""
+    for p in range(start, last):
+        c1, c3 = p - 1, p + 1
+        if side > 0 and hi[c1] < lo[c3]:
+            return c1, c3, float(lo[c3]), float(hi[c1])
+        if side < 0 and lo[c1] > hi[c3]:
+            return c1, c3, float(hi[c3]), float(lo[c1])
+    return None
+
+
+def _fvg_retest(
+    side: int, near: float, far: float, c3: int, last: int, hi: np.ndarray, lo: np.ndarray, cl: np.ndarray
+) -> int | None:
+    """Bar that closes back out of the gap on the trade side after trading into it."""
+    touched = False
+    for t in range(c3 + 1, last + 1):
+        if side * (cl[t] - far) < 0:
+            return None  # closed through the gap
+        touched = touched or (lo[t] <= near if side > 0 else hi[t] >= near)
+        if touched and side * (cl[t] - near) > 0:
+            return t
+    return None
+
+
+def _limit_fill(
+    side: int, limit: float, c3: int, last: int,
+    ask_op: np.ndarray, ask_lo: np.ndarray, op: np.ndarray, hi: np.ndarray,
+) -> tuple[int, float] | None:
+    """First bar after the gap that fills a buy limit on ask / sell limit on bid."""
+    for t in range(c3 + 1, last + 1):
+        if side > 0:
+            if ask_op[t] <= limit:
+                return t, float(ask_op[t])
+            if ask_lo[t] <= limit:
+                return t, limit
+        else:
+            if op[t] >= limit:
+                return t, float(op[t])
+            if hi[t] >= limit:
+                return t, limit
+    return None
+
+
+def find_setups(bars: pd.DataFrame, cfg: dict[str, Any]) -> list[Setup]:
+    """One candidate trade per NY day (first break only), in time order."""
+    sess = cfg["session"]
+    sig = cfg["signal"]
+    range_start = _minutes(sess["range_start"])
+    range_end = _minutes(sess["range_end"])
+    entry_start = _minutes(sess.get("entry_start", sess["range_end"]))
+    overnight = range_start >= range_end
+    cutoff = _minutes(sess["entry_cutoff"])
+    min_bars = int(sig.get("min_range_bars", 1))
+    buffer = float(sig["stop_buffer_points"])
+    tp_r = float(sig["take_profit_r"])
+    min_pts = float(sig.get("min_break_points", 0.0))
+    min_frac = float(sig.get("min_break_pct", 0.0)) / 100
+    min_body = float(sig.get("min_body_vs_range", 0.0))
+    confirm = bool(sig.get("confirm_close", False))
+    break_mode = sig.get("break_mode", "close_beyond")
+    reversal = break_mode == "sweep_reversal"
+    stop_prior = bool(sig.get("stop_includes_prior_bar", False))
+    atr_stop = float(sig.get("atr_stop_mult", 0.0))
+    min_stop_atr = float(sig.get("min_stop_atr", 0.0))
+    entry_mode = sig.get("entry_mode", "next_close")
+    fvg_level = float(sig.get("fvg_limit_level", 0.0))
+    fvg_stop = sig.get("stop_ref", "break") == "fvg"
+    skip_days = set(sig.get("skip_weekdays", []))
+    news_days = _news_days(sig, sess["timezone"])
+    only_news = bool(sig.get("only_news_days", False))
+    trade_from = sig.get("trade_from")
+    vol_lookback = int(sig.get("vol_lookback_days", 100))
+    min_atr_rank = float(sig.get("min_daily_atr_pctile", 0.0))
+    min_range_rank = float(sig.get("min_range_pctile", 0.0))
+
+    local = bars.index.tz_convert(sess["timezone"])
+    minute = np.asarray(local.hour * 60 + local.minute)
+    op = bars["open"].to_numpy()
+    hi = bars["high"].to_numpy()
+    lo = bars["low"].to_numpy()
+    cl = bars["close"].to_numpy()
+    ask_op = bars["ask_open"].to_numpy()
+    ask_lo = bars["ask_low"].to_numpy()
+    ask_cl = bars["ask_close"].to_numpy()
+    atr = _atr(hi, lo, cl, int(sig.get("atr_period", 14)))
+    atr_rank = _daily_atr_rank(bars, local, vol_lookback) if min_atr_rank > 0 else {}
+    widths: list[float] = []  # past kill-zone range widths / price
+
+    setups: list[Setup] = []
+    prev = None
+    for day, rows in pd.Series(np.arange(len(bars))).groupby(local.date):
+        rows = rows.to_numpy()
+        last, prev = prev, (day, rows)
+        if day.strftime("%a") in skip_days:
+            continue
+        if news_days is not None and (str(day) in news_days) != only_news:
+            continue
+        m = minute[rows]
+        if overnight:
+            if last is None or (day - last[0]).days != 1:
+                continue
+            rng = np.concatenate([last[1][minute[last[1]] >= range_start], rows[m < range_end]])
+        else:
+            rng = rows[(m >= range_start) & (m < range_end)]
+        if len(rng) < min_bars:
+            continue
+        rh, rl = float(hi[rng].max()), float(lo[rng].min())
+        widths.append((rh - rl) / rl)
+        past = widths[-vol_lookback - 1 : -1]
+        if min_range_rank > 0 and len(past) >= 20 and _rank(np.array(past), widths[-1]) < min_range_rank:
+            continue
+        if atr_rank.get(day, 1.0) < min_atr_rank:  # NaN (no history yet) never skips
+            continue
+        if trade_from and str(day) < trade_from:
+            continue
+        body_floor = min_body * float(np.abs(cl[rng] - op[rng]).mean())
+
+        scan = rows[m >= entry_start]
+        for k in range(len(scan) - 1):
+            b, e = scan[k], scan[k + 1]
+            if reversal:
+                side = _sweep_side(hi[b], lo[b], cl[b], cl[b - 1], rh, rl)
+            else:
+                side = _break_side(op[b], cl[b], rh, rl, max(min_pts, min_frac * cl[b]), body_floor)
+                if break_mode == "fresh" and side and not rl <= cl[b - 1] <= rh:
+                    side = 0  # already outside before this bar
+            if side == 0:
+                continue
+            level = rh if (side > 0) != reversal else rl  # the side the confirming close must hold
+            if confirm and side * (cl[e] - level) <= 0:
+                continue  # failed confirmation: wait for the next signal
+            if minute[e] + BAR_MINUTES > cutoff:
+                break
+            c1 = fill = None
+            if entry_mode != "next_close":
+                gap = _first_fvg(side, b, scan[-1], hi, lo)
+                if gap is None:
+                    break
+                c1, c3, near, far = gap
+                if entry_mode == "fvg_limit":
+                    limit = near + fvg_level * (far - near)
+                    fill = _limit_fill(side, limit, c3, scan[-1], ask_op, ask_lo, op, hi)
+                    e = fill[0] if fill else None
+                else:
+                    e = _fvg_retest(side, near, far, c3, scan[-1], hi, lo, cl)
+                if e is None or minute[e] + BAR_MINUTES > cutoff:
+                    break
+
+            ref = [c1] if c1 is not None and fvg_stop else [b - 1, b] if stop_prior else [b]
+            stop = float(lo[ref].min()) - buffer if side > 0 else float(hi[ref].max()) + buffer
+            if fill:
+                entry = fill[1]
+            elif side * (cl[e] - stop) <= 0:
+                break  # entry bar closed at or beyond the stop
+            else:
+                entry = float(ask_cl[e] if side > 0 else cl[e])
+            a = float(atr[c3] if fill else atr[e])  # a limit's stop is set when it is placed
+            if atr_stop > 0:
+                stop = entry - side * atr_stop * a
+            elif abs(entry - stop) < min_stop_atr * a:
+                stop = entry - side * min_stop_atr * a
+            risk = side * (entry - stop)
+            if risk <= 0:
+                break
+
+            setups.append(
+                Setup(
+                    day=str(day),
+                    side=side,
+                    range_high=rh,
+                    range_low=rl,
+                    break_time=bars.index[b],
+                    entry_time=bars.index[e] + BAR,
+                    entry_pos=int(e),
+                    entry=entry,
+                    stop=stop,
+                    take_profit=entry + side * tp_r * risk if tp_r > 0 else None,
+                    risk_points=risk,
+                    spread_points=float(ask_cl[e] - cl[e]),
+                    atr_points=a,
+                    intrabar_fill=fill is not None,
+                )
+            )
+            break
+    return setups
+
+
+def _first_exit(
+    s: Setup,
+    o: np.ndarray,
+    h: np.ndarray,
+    l: np.ndarray,
+    c: np.ndarray,
+    be_r: float = 0.0,
+    trail_pts: float = 0.0,
+    trail_start_r: float = 1.0,
+) -> tuple[int, float, str]:
+    """First bar to hit the stop or target. A moved stop applies from the next bar."""
+    side, entry, tp = s.side, s.entry, s.take_profit
+    stop, best = s.stop, entry
+    j = s.entry_pos
+    if s.intrabar_fill and (l[j] <= stop if side > 0 else h[j] >= stop):
+        return j, stop, "stop"  # order inside the fill bar unknown: assume the worst
+    for j in range(s.entry_pos + 1, len(o)):
+        reason = "stop" if stop == s.stop else "breakeven" if stop == entry else "trail"
+        if side > 0:
+            if o[j] <= stop:
+                return j, float(o[j]), reason + "_gap"
+            if tp is not None and o[j] >= tp:
+                return j, float(o[j]), "tp_gap"
+            if l[j] <= stop:
+                return j, stop, reason
+            if tp is not None and h[j] >= tp:
+                return j, tp, "tp"
+            best = max(best, float(h[j]))
+        else:
+            if o[j] >= stop:
+                return j, float(o[j]), reason + "_gap"
+            if tp is not None and o[j] <= tp:
+                return j, float(o[j]), "tp_gap"
+            if h[j] >= stop:
+                return j, stop, reason
+            if tp is not None and l[j] <= tp:
+                return j, tp, "tp"
+            best = min(best, float(l[j]))
+        gain_r = side * (best - entry) / s.risk_points
+        if be_r and gain_r >= be_r:
+            stop = max(stop, entry) if side > 0 else min(stop, entry)
+        if trail_pts and gain_r >= trail_start_r:
+            stop = max(stop, best - trail_pts) if side > 0 else min(stop, best + trail_pts)
+    return len(o) - 1, float(c[-1]), "data_end"
+
+
+def simulate(
+    bars: pd.DataFrame, setups: list[Setup], sig: dict[str, Any] | None = None
+) -> tuple[list[KZTrade], int]:
+    """Fill setups one at a time. Returns (trades, setups skipped while busy)."""
+    sig = sig or {}
+    be_r = float(sig.get("breakeven_at_r", 0.0))
+    trail_mult = float(sig.get("trail_atr_mult", 0.0))
+    trail_start_r = float(sig.get("trail_start_r", 1.0))
+    swap = {1: float(sig.get("swap_long_pct", 0.0)) / 100, -1: float(sig.get("swap_short_pct", 0.0)) / 100}
+    triple_day = sig.get("swap_triple_day", "Fri")
+    bid = [bars[c].to_numpy() for c in OHLC]
+    ask = [bars[f"ask_{c}"].to_numpy() for c in OHLC]
+
+    trades: list[KZTrade] = []
+    busy_until: pd.Timestamp | None = None
+    skipped = 0
+    for s in setups:
+        if busy_until is not None and s.entry_time < busy_until:
+            skipped += 1
+            continue
+        px = bid if s.side > 0 else ask
+        j, exit_px, reason = _first_exit(s, *px, be_r, trail_mult * s.atr_points, trail_start_r)
+        exit_time = bars.index[j]
+        busy_until = exit_time + BAR
+
+        r_multiple = s.side * (exit_px - s.entry) / s.risk_points
+        if swap[s.side]:
+            r_multiple += _rollovers(s.entry_time, exit_time, triple_day) * swap[s.side] * s.entry / s.risk_points
+        first = s.entry_pos if s.intrabar_fill else s.entry_pos + 1
+        worst = px[2][first : j + 1].min() if s.side > 0 else px[1][first : j + 1].max()
+        mae = s.side * (s.entry - worst) / s.risk_points if j >= first else 0.0
+        best = px[1][first : j + 1].max() if s.side > 0 else px[2][first : j + 1].min()
+        mfe = s.side * (best - s.entry) / s.risk_points if j >= first else 0.0
+        fields = asdict(s)
+        fields.pop("entry_pos")
+        fields.pop("intrabar_fill")
+        trades.append(
+            KZTrade(
+                **fields,
+                exit_time=exit_time,
+                exit_price=exit_px,
+                exit_reason=reason,
+                r_multiple=r_multiple,
+                mae_r=max(min(mae, 1.0), -r_multiple, 0.0),
+                mfe_r=r_multiple if reason.startswith("tp") else max(mfe, r_multiple, 0.0),
+            )
+        )
+    return trades, skipped
+
+
+def run_portfolio(
+    markets: dict[str, tuple[pd.DataFrame, dict[str, Any]]],
+) -> tuple[list[tuple[str, KZTrade]], int]:
+    """One trade at a time across several markets, each with its own bars and config.
+
+    Setups are taken in entry-time order; on a tie the market listed first
+    wins. Returns ((symbol, trade) pairs, setups skipped while a trade was open).
+    """
+    queue = []
+    for rank, (sym, (bars, cfg)) in enumerate(markets.items()):
+        queue += [(s.entry_time, rank, sym, s) for s in find_setups(bars, cfg)]
+    queue.sort(key=lambda q: (q[0], q[1]))
+
+    out: list[tuple[str, KZTrade]] = []
+    busy_until: pd.Timestamp | None = None
+    skipped = 0
+    for _, _, sym, s in queue:
+        if busy_until is not None and s.entry_time < busy_until:
+            skipped += 1
+            continue
+        bars, cfg = markets[sym]
+        (trade,), _ = simulate(bars, [s], cfg["signal"])
+        out.append((sym, trade))
+        busy_until = trade.exit_time + BAR
+    return out, skipped
+
+
+def _stats(r: np.ndarray) -> dict[str, Any]:
+    return {
+        "n_trades": int(len(r)),
+        "win_rate": float((r > 0).mean()) if len(r) else 0.0,
+        "expectancy_r": float(r.mean()) if len(r) else 0.0,
+        "total_r": float(r.sum()),
+    }
+
+
+def summarize(trades: list[KZTrade]) -> dict[str, Any]:
+    r = np.array([t.r_multiple for t in trades], dtype=float)
+    out = _stats(r)
+    if not trades:
+        return out
+
+    wins, losses = r[r > 0].sum(), -r[r < 0].sum()
+    equity = np.concatenate([[0.0], np.cumsum(r)])
+    streak = longest = 0
+    for x in r:
+        streak = streak + 1 if x < 0 else 0
+        longest = max(longest, streak)
+
+    sides = np.array([t.side for t in trades])
+    years = np.array([t.day[:4] for t in trades])
+    out.update(
+        {
+            "profit_factor": float(wins / losses) if losses > 0 else float("inf"),
+            "max_dd_r": float((np.maximum.accumulate(equity) - equity).max()),
+            "max_losing_streak": int(longest),
+            "avg_risk_points": float(np.mean([t.risk_points for t in trades])),
+            "avg_spread_points": float(np.mean([t.spread_points for t in trades])),
+            "exit_reasons": dict(Counter(t.exit_reason for t in trades)),
+            "long": _stats(r[sides > 0]),
+            "short": _stats(r[sides < 0]),
+            "by_year": {y: _stats(r[years == y]) for y in sorted(set(years))},
+        }
+    )
+    return out
+
+
+def run(bars: pd.DataFrame, cfg: dict[str, Any]) -> tuple[list[KZTrade], dict[str, Any]]:
+    if cfg["signal"].get("min_spread_points"):
+        bars = with_min_spread(bars, float(cfg["signal"]["min_spread_points"]))
+    setups = find_setups(bars, cfg)
+    trades, skipped = simulate(bars, setups, cfg["signal"])
+    summary = {"n_setups": len(setups), "skipped_open_trade": skipped, **summarize(trades)}
+    return trades, summary
+
+
+def trades_frame(trades: list[KZTrade]) -> pd.DataFrame:
+    return pd.DataFrame([asdict(t) for t in trades])

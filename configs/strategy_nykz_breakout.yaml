@@ -1,0 +1,30 @@
+# NY kill-zone breakout v3 — NAS100 M5, real Dukascopy bid/ask spread
+# v2: a break counts only when the next candle also closes outside the range.
+# v3: v2 entry with a 2x ATR(14, M5) stop and the fixed 4R target.
+# Run: python scripts/run_nykz_breakout.py
+strategy: nykz_breakout
+
+symbol: NAS100
+timeframe: M5
+
+session:
+  # All times are New York local, so the IST clock shifts with US DST:
+  #   range 07:00-10:00 NY = 16:30-19:30 IST (US summer) / 17:30-20:30 IST (US winter)
+  #   cutoff 16:55 NY      = 02:25 IST (US summer)       / 03:25 IST (US winter)
+  timezone: America/New_York
+  range_start: "07:00"
+  range_end: "10:00"
+  entry_cutoff: "16:55"  # latest entry fill (entry bar close); CFD closes 16:15 NY
+
+signal:
+  min_range_bars: 30       # skip days with a patchy range (full range = 36 bars)
+  stop_buffer_points: 2.0  # break-candle stop, still used to skip entries that close beyond it
+  take_profit_r: 4.0
+  confirm_close: true      # else wait for the next break (v1: false)
+  atr_period: 14
+  atr_stop_mult: 2.0       # stop = entry -/+ 2x ATR (v1/v2: break candle stop)
+
+data:
+  start: "2023-01-01"
+  end: null
+  cache_dir: data/parquet

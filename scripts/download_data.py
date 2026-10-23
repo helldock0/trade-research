@@ -74,6 +74,12 @@ def main(argv: list[str] | None = None) -> None:
         default=0.15,
         help="Seconds to sleep between Dukascopy year chunks (rate limit)",
     )
+    parser.add_argument(
+        "--side",
+        choices=("bid", "ask"),
+        default="bid",
+        help="Offer side; ask bars are saved as {SYMBOL}_{TF}_ask.parquet",
+    )
     args = parser.parse_args(argv)
 
     ensure_dirs()
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> None:
             force=args.force,
             sleep_s=args.sleep,
             continue_on_error=True,
+            side=args.side,
         )
         return
     except Exception as exc:
