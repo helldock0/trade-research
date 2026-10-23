@@ -1,0 +1,6 @@
+addon,cost,first_payout_median_days,fee_back_median_days,verdict
+No add-ons (your plan),$280 with coupon,38,94,Buy this
+7-Day Payout,+20%,38,94,"Skip: no faster, 5 winning days take longer than 7 or 14 days"
+On-Demand Payout,+40%,38,94,"Skip: no faster, for the same reason"
+2% Max Risk Per Trade,+30%,38,94,"Skip: worst loss at 0.25% risk was 1.34%, under the 1.5% cap"
+3 Minimum Trading Days,price not shown,26,93,"Optional: first $100 sooner, fee back no sooner"

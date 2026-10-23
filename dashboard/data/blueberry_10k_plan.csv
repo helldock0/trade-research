@@ -1,0 +1,5 @@
+scenario,risk_pct,risk_usd,goal,target_usd,reached,lost_trailing_dd,lost_trade_cap,median_days,p75_days,accounts
+"0.25% risk, first $100 payout",0.25,25.0,first $100 payout,100.0,0.9918,0.0082,0.0,38.0,76.0,1715
+"0.25% risk, fee back ($350 profit)",0.25,25.0,fee back ($350 profit),350.0,0.9346,0.0654,0.0,94.5,182.0,1697
+"0.5% risk, first $100 payout",0.5,50.0,first $100 payout,100.0,0.87,0.088,0.042,34.0,48.0,1716
+"0.5% risk, fee back ($350 profit)",0.5,50.0,fee back ($350 profit),350.0,0.8087,0.1359,0.0554,38.0,68.5,1715
