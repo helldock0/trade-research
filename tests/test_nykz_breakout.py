@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.strategy.nykz_breakout import find_setups, run, simulate
+from src.strategy.nykz_breakout import _rollovers, find_setups, run, simulate, with_min_spread
 
 CFG = {
     "session": {
@@ -440,3 +440,46 @@ def test_portfolio_takes_one_trade_at_a_time_first_market_wins_ties():
     assert [sym for sym, _ in trades] == ["A"] and skipped == 2
     trades, _ = run_portfolio({"B": (b, CFG), "A": (a, CFG)})
     assert [sym for sym, _ in trades] == ["B"]
+
+
+def test_with_min_spread_only_widens_narrow_spreads():
+    bars = _bars("2024-07-10", [FLAT, FLAT], spread=0.5)
+    bars.iloc[1, bars.columns.get_loc("ask_close")] = 102.0  # 2-point spread stays
+    out = with_min_spread(bars, 1.0)
+    assert list(out["ask_open"]) == [101.0, 101.0]
+    assert list(out["ask_close"]) == [101.0, 102.0]
+
+
+def test_rollovers_count_5pm_new_york_and_triple_friday():
+    ny = lambda s: pd.Timestamp(s, tz="America/New_York").tz_convert("UTC")
+    assert _rollovers(ny("2026-10-14 11:00"), ny("2026-10-14 16:55")) == 0
+    assert _rollovers(ny("2026-10-14 11:00"), ny("2026-10-14 18:00")) == 1
+    assert _rollovers(ny("2026-10-16 11:00"), ny("2026-10-19 09:00")) == 3  # Friday counts 3
+    assert _rollovers(ny("2026-10-15 11:00"), ny("2026-10-19 09:00")) == 4
+    assert _rollovers(ny("2026-03-06 11:00"), ny("2026-03-09 18:00")) == 4  # across the DST change
+    assert _rollovers(ny("2026-10-14 11:00"), ny("2026-10-15 18:00"), triple_day="Wed") == 4
+
+
+def test_swap_is_booked_per_rollover_held():
+    held = [(104, 105, 103, 104)] * 83  # 10:15 to 17:05 NY: through one Wednesday rollover
+    bars = _day("2024-07-10", [(100, 103, 100, 102.5), (102.5, 104, 102, 103.5)] + held + [(104, 129, 103, 128.5)])
+    costs = {"swap_long_pct": -0.1, "swap_short_pct": 0.05}
+    (t,) = run(bars, {**CFG, "signal": {**CFG["signal"], **costs}})[0]
+    assert t.exit_reason == "tp"
+    assert t.r_multiple == pytest.approx(4.0 - 0.001 * 104.0 / 6.0)
+    assert t.mfe_r == t.r_multiple
+    (t,) = run(bars, CFG)[0]
+    assert t.r_multiple == pytest.approx(4.0)
+
+
+def test_blueberry_config_is_v3_rules_plus_costs_at_quarter_pct_risk():
+    from src.config import load_strategy_config
+
+    v3 = load_strategy_config("strategy_nykz_breakout.yaml")
+    bb = load_strategy_config("strategy_nykz_breakout_blueberry.yaml")
+    cost_keys = {"min_spread_points", "swap_long_pct", "swap_short_pct", "swap_triple_day"}
+    assert bb["session"] == v3["session"]
+    assert {k: v for k, v in bb["signal"].items() if k not in cost_keys} == v3["signal"]
+    assert bb["signal"]["min_spread_points"] == 1.26
+    assert bb["signal"]["swap_long_pct"] < 0 < bb["signal"]["swap_short_pct"]
+    assert bb["risk"]["risk_per_trade_pct"] == 0.25

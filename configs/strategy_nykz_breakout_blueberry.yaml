@@ -1,0 +1,43 @@
+# NY kill-zone breakout on Blueberry Funded (MT5 NAS100.p) — NAS100 M5
+# Same rules as v3 (strategy_nykz_breakout.yaml; a test keeps them identical),
+# risking 0.25% of the starting balance per trade (the $10K Instant Elite plan),
+# with Blueberry's costs from the NAS100.p specification on 23 Oct 2026:
+#   spread 126 points = 1.26 index points (bid 28,992.82 / ask 28,994.08),
+#   swap long -58.5 / short +7.6 USD per lot per night (contract size 10 assumed,
+#   i.e. $10 per point: -0.0202% / +0.0026% of price a night). Today's swap
+#   rates are applied to every year, though rates were lower in 2018-22.
+# Run: python scripts/instant_sim_nykz_breakout.py --config strategy_nykz_breakout_blueberry.yaml --balance 10000
+strategy: nykz_breakout_blueberry
+
+symbol: NAS100
+timeframe: M5
+
+session:
+  # All times are New York local, so the IST clock shifts with US DST:
+  #   range 07:00-10:00 NY = 16:30-19:30 IST (US summer) / 17:30-20:30 IST (US winter)
+  #   cutoff 16:55 NY      = 02:25 IST (US summer)       / 03:25 IST (US winter)
+  timezone: America/New_York
+  range_start: "07:00"
+  range_end: "10:00"
+  entry_cutoff: "16:55"  # latest entry fill (entry bar close); CFD closes 16:15 NY
+
+signal:
+  min_range_bars: 30       # skip days with a patchy range (full range = 36 bars)
+  stop_buffer_points: 2.0  # break-candle stop, still used to skip entries that close beyond it
+  take_profit_r: 4.0
+  confirm_close: true
+  atr_period: 14
+  atr_stop_mult: 2.0
+  # broker costs
+  min_spread_points: 1.26   # ask at least this far above the bid (Dukascopy's is often wider)
+  swap_long_pct: -0.02018   # % of the entry price per 17:00 NY rollover held: 58.5 / (10 x 28,993)
+  swap_short_pct: 0.00262   # 7.6 / (10 x 28,993)
+  swap_triple_day: Fri      # rollover charged three times (weekend)
+
+risk:
+  risk_per_trade_pct: 0.25  # % of the starting balance per trade (1R)
+
+data:
+  start: "2023-01-01"
+  end: null
+  cache_dir: data/parquet

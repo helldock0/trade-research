@@ -48,6 +48,10 @@ Rules (session times are New York local, so US DST is handled):
   time: a day that breaks while a trade is still open is skipped.
 - Long exits trigger and fill on bid, short exits on ask. A bar that opens
   past a level fills at its open (gap); the stop wins when one bar spans both.
+- Broker costs (optional): run() widens the ask to at least
+  min_spread_points above the bid. swap_long_pct / swap_short_pct (% of the
+  entry price, negative = paid) are booked for each 17:00 New York rollover a
+  trade is held through, three times on swap_triple_day.
 """
 
 from __future__ import annotations
@@ -122,6 +126,35 @@ def without_spread(bars: pd.DataFrame) -> pd.DataFrame:
     for c in OHLC:
         out[f"ask_{c}"] = out[c]
     return out
+
+
+def with_min_spread(bars: pd.DataFrame, points: float) -> pd.DataFrame:
+    """Copy with the ask at least `points` above the bid (a broker's typical spread)."""
+    out = bars.copy()
+    for c in OHLC:
+        out[f"ask_{c}"] = np.maximum(out[f"ask_{c}"], out[c] + points)
+    return out
+
+
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+
+def _rollovers(entry_time: pd.Timestamp, exit_time: pd.Timestamp, triple_day: str = "Fri") -> int:
+    """Swap nights for a trade open from entry_time to the bar opening at exit_time.
+
+    One per weekday 17:00 New York rollover in (entry_time, exit_time], three
+    on triple_day.
+    """
+    a, b = entry_time.tz_convert("America/New_York"), exit_time.tz_convert("America/New_York")
+    n, roll = 0, a.normalize() + pd.Timedelta(hours=17)
+    if roll <= a:
+        roll += pd.Timedelta(days=1)
+    while roll <= b:
+        day = roll.strftime("%a")
+        if day in WEEKDAYS:
+            n += 3 if day == triple_day else 1
+        roll = (roll + pd.Timedelta(days=1)).normalize() + pd.Timedelta(hours=17)  # DST-safe
+    return n
 
 
 def _minutes(hhmm: str) -> int:
@@ -435,6 +468,8 @@ def simulate(
     be_r = float(sig.get("breakeven_at_r", 0.0))
     trail_mult = float(sig.get("trail_atr_mult", 0.0))
     trail_start_r = float(sig.get("trail_start_r", 1.0))
+    swap = {1: float(sig.get("swap_long_pct", 0.0)) / 100, -1: float(sig.get("swap_short_pct", 0.0)) / 100}
+    triple_day = sig.get("swap_triple_day", "Fri")
     bid = [bars[c].to_numpy() for c in OHLC]
     ask = [bars[f"ask_{c}"].to_numpy() for c in OHLC]
 
@@ -451,6 +486,8 @@ def simulate(
         busy_until = exit_time + BAR
 
         r_multiple = s.side * (exit_px - s.entry) / s.risk_points
+        if swap[s.side]:
+            r_multiple += _rollovers(s.entry_time, exit_time, triple_day) * swap[s.side] * s.entry / s.risk_points
         first = s.entry_pos if s.intrabar_fill else s.entry_pos + 1
         worst = px[2][first : j + 1].min() if s.side > 0 else px[1][first : j + 1].max()
         mae = s.side * (s.entry - worst) / s.risk_points if j >= first else 0.0
@@ -541,6 +578,8 @@ def summarize(trades: list[KZTrade]) -> dict[str, Any]:
 
 
 def run(bars: pd.DataFrame, cfg: dict[str, Any]) -> tuple[list[KZTrade], dict[str, Any]]:
+    if cfg["signal"].get("min_spread_points"):
+        bars = with_min_spread(bars, float(cfg["signal"]["min_spread_points"]))
     setups = find_setups(bars, cfg)
     trades, skipped = simulate(bars, setups, cfg["signal"])
     summary = {"n_setups": len(setups), "skipped_open_trade": skipped, **summarize(trades)}
