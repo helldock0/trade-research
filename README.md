@@ -8,6 +8,7 @@ Code lives on `main`; nothing here is merged into it.
 - Also M5 **bid and ask** for 13 markets (`*_M5.parquet` bid, `*_M5_ask.parquet` ask; `--intervals M5 [--side ask]`), used by the NY kill-zone backtests for real-spread fills. M5 index names follow `src/data/dukascopy_ingest.py`: US500 = SPX500 (`E_SandP-500`), GER40 = `E_DAAX`, UK100 = `E_Futsee-100`, JP225 = `E_N225Jap`
 - Span: 2018-01-01 -> 2026-10-21 (US2000 history starts 2019)
 - Indices are Dukascopy CFDs: NAS100 = `E_NQ-100`, SPX500 = `E_SandP-500`, US30 = `E_D&J-Ind`, US2000 = `USSC2000.IDX/USD`
+- Also H1 bid for NAS100 and USDJPY from 2016-06 (`--intervals H1 --start 2016-06-01`): daily warm-up for the side-edge backtests (`scripts/combo_nykz_breakout.py`)
 - Re-encoded losslessly with zstd (level 9); tables read back identical to the downloads
 
 ## Restore into `data/parquet`
@@ -77,6 +78,13 @@ git clone --branch data --single-branch --depth 1 https://github.com/helldock0/t
 | `USDCHF_M5_ask.parquet` | 657,497 | 2018-01-01 22:00 | 2026-10-20 00:00 | 8.8 | `2daefe0b4ef471bf` |
 | `USDJPY_M5.parquet` | 658,065 | 2018-01-01 22:00 | 2026-10-20 00:00 | 9.5 | `5b06cd5741789d20` |
 | `USDJPY_M5_ask.parquet` | 658,065 | 2018-01-01 22:00 | 2026-10-20 00:00 | 9.5 | `284ffd6882b940d1` |
+
+### H1 (bid, added 2026-10-23)
+
+| File | Rows | First bar (UTC) | Last bar (UTC) | MB | sha256 (prefix) |
+|---|---:|---|---|---:|---|
+| `NAS100_H1.parquet` | 57,321 | 2016-06-01 06:00 | 2026-10-23 03:00 | 1.8 | `ec4240929479fe02` |
+| `USDJPY_H1.parquet` | 64,827 | 2016-06-01 00:00 | 2026-10-23 03:00 | 1.5 | `98854e22dce95095` |
 
 ## Adding files
 
